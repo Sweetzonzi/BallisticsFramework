@@ -166,6 +166,33 @@ boolean ricochet = ctx.getExtensions().get(TBDamageExtensions.RICOCHET);
 
 也可以在任意模组侧注册自己的扩展 key。
 
+### 在 hurt() 内获取上下文
+
+当需要在 {@link TBHurtTarget#hurt TBHurtTarget.hurt()} 内读取完整的命中上下文（如命中位置、速度、侧信道扩展）来做额外后效处理时，调用 {@link TBDamageApi#getContextFor TBDamageApi.getContextFor(this)}：
+
+```java
+@Override
+public boolean hurt(DamageSource source, float amount) {
+    TBDamageContext ctx = TBDamageApi.getContextFor(this);
+    if (ctx != null) {
+        // 根据命中位置播放不同音效
+        playArmorHitSound(ctx.hitPoint());
+        // 读取侧信道标记（由 getRHA 覆写设置）
+        if (Boolean.TRUE.equals(
+                ctx.extensions().get(TBDamageExtensions.RICOCHET))) {
+            spawnRicochetParticles(ctx.hitPoint(), ctx.hitNormal());
+        }
+        // 根据穿深/护甲比决定破片数量
+        if (ctx.penetration() > 100f) {
+            spawnSpallParticles(ctx.hitPoint(), 5);
+        }
+    }
+    return super.hurt(source, amount);
+}
+```
+
+该方法仅在协议管线内部（即 push 之后、pop 之前）返回非 null 值，线程安全，不破坏现有逻辑。
+
 ## 架构概要
 
 ```

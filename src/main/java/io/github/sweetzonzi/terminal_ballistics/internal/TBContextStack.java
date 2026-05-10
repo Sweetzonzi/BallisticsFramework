@@ -1,6 +1,7 @@
 package io.github.sweetzonzi.terminal_ballistics.internal;
 
 import io.github.sweetzonzi.terminal_ballistics.api.TBDamageContext;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -55,5 +56,25 @@ public final class TBContextStack {
     public boolean hasContextFor(Object target) {
         Deque<Entry> deque = stack.get();
         return !deque.isEmpty() && deque.peek().target() == target;
+    }
+
+    /**
+     * 获取栈顶匹配目标的协议上下文。
+     * <p>
+     * 遍历栈时只匹配栈顶元素（即当前嵌套层级最深的那一层协议调用），
+     * 这是因为同一线程中可能因协议管线嵌套产生多层栈帧，而每一层的
+     * target 不同——栈顶始终代表"最内层"正在执行的协议伤害。
+     * push/pop 由 {@link io.github.sweetzonzi.terminal_ballistics.api.TBDamageApi#hurt}
+     * 的 try/finally 保证成对出现，因此不存在栈帧错位。
+     *
+     * @param target 要获取上下文的目标（使用 {@code ==} 引用比较）
+     * @return 栈顶上下文，栈为空或栈顶 target 不匹配时返回 null
+     */
+    @Nullable
+    public TBDamageContext getContextFor(Object target) {
+        Deque<Entry> deque = stack.get();
+        if (deque.isEmpty()) return null;
+        Entry top = deque.peek();
+        return top.target() == target ? top.ctx() : null;
     }
 }

@@ -166,6 +166,33 @@ The protocol ships with four standard extension keys:
 
 You can also register your own extension keys on any mod's side.
 
+### Retrieving Context Inside hurt()
+
+When you need access to the full `TBDamageContext` (hit point, velocity, side-channel extensions) inside {@link TBHurtTarget#hurt TBHurtTarget.hurt()} for additional post-processing, call {@link TBDamageApi#getContextFor TBDamageApi.getContextFor(this)}:
+
+```java
+@Override
+public boolean hurt(DamageSource source, float amount) {
+    TBDamageContext ctx = TBDamageApi.getContextFor(this);
+    if (ctx != null) {
+        // Play different hit sounds based on location
+        playArmorHitSound(ctx.hitPoint());
+        // Read side-channel flags (set by getRHA override)
+        if (Boolean.TRUE.equals(
+                ctx.extensions().get(TBDamageExtensions.RICOCHET))) {
+            spawnRicochetParticles(ctx.hitPoint(), ctx.hitNormal());
+        }
+        // Adjust spall count based on penetration ratio
+        if (ctx.penetration() > 100f) {
+            spawnSpallParticles(ctx.hitPoint(), 5);
+        }
+    }
+    return super.hurt(source, amount);
+}
+```
+
+This method returns a non-null value only inside the protocol pipeline (between push and pop). It is thread-safe and does not break existing logic.
+
 ## Architecture Overview
 
 ```
