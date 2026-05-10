@@ -1,4 +1,4 @@
-# TerminalBallistics — Terminal Ballistics Damage Protocol Layer
+# Terminal Ballistics Protocol — A Ballistics Damage Protocol Layer
 
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green)
 ![NeoForge](https://img.shields.io/badge/NeoForge-21.1.219-blue)
@@ -14,17 +14,15 @@
 
 TerminalBallistics is a NeoForge (1.21.1) library mod that defines a **Terminal Ballistics Damage Protocol Layer** for the Minecraft modding ecosystem.
 
-It is designed as a compatibility protocol that multiple gun, vehicle, and armor mods can depend on together, rather than a standalone damage overhaul mod. Typical problems it solves:
+It serves as a compatibility protocol that multiple gun, vehicle, and armor mods can depend on together. Problems it solves:
 
 - When a bullet hits armor, how do you pass high-dimensional info like **penetration, impact angle, and hit location**?
-- How does an armor mod use **hit normals and velocity vectors** for angled armor slope correction and penetration checks?
+- How does an armor mod use **hit normals and velocity vectors** for penetration slope correction?
 - How can multiple ballistic systems share a unified damage-armor interaction protocol?
 
-The protocol's guiding principle is **wrap, don't replace** — it never bypasses `Entity#hurt`/`LivingEntity#hurt`. For entities that don't declare protocol awareness, damage runs entirely through vanilla.
+The protocol's guiding principle is **wrap, don't replace** — it never bypasses `Entity#hurt`. For non-protocol-aware entities, damage runs entirely through vanilla.
 
-## Current Status
-
-No Maven release yet. Depend via **local jar**.
+***
 
 ## Building
 
@@ -32,186 +30,229 @@ No Maven release yet. Depend via **local jar**.
 ./gradlew build
 ```
 
-Output is at `build/libs/terminal_ballistics-1.21.1-1.0-SNAPSHOT.jar`.
+Output at `build/libs/terminal_ballistics-1.21.1-1.0-SNAPSHOT.jar`.
 
-## Using as a Dependency
+Dependency via flatDir local jar or source-set dependency; declare in `neoforge.mods.toml`.
 
-### Option 1: flatDir + Local Jar
-
-Place the jar in your project's `libs/` directory and add to `build.gradle`:
-
-```groovy
-repositories {
-    flatDir {
-        dirs 'libs'
-    }
-}
-
-dependencies {
-    implementation "io.github.sweetzonzi:terminal_ballistics:1.0-SNAPSHOT"
-}
-```
-
-Then declare the dependency in `neoforge.mods.toml`:
-
-```toml
-[[dependencies."your_mod_id"]]
-modId = "terminal_ballistics"
-type = "required"
-versionRange = "[1.0-SNAPSHOT,)"
-ordering = "NONE"
-side = "BOTH"
-```
-
-### Option 2: Source Set Dependency (Same Workspace)
-
-```groovy
-dependencies {
-    implementation project(":TerminalBallistics")
-}
-```
+***
 
 ## Quick Start
 
-### Weapon Mod Side: Firing a Protocol Damage
+### Weapon Mod — Basic Protocol Damage
 
 ```java
-// Build the hit context
 TBDamageContext ctx = TBDamageContext.builder()
     .source(source)                              // vanilla DamageSource
     .baseDamage(35f)                             // nominal damage
-    .hitVelocity(bullet.getDeltaMovement())      // projectile velocity vector
+    .hitVelocity(bullet.getDeltaMovement())      // velocity (m/s)
     .hitPoint(hitResult.getLocation())           // impact point
-    .hitNormal(hitResult.getDirection())         // surface normal at impact
-    .penetration(120f)                           // theoretical penetration (mm RHA)
+    .hitNormal(hitResult.getDirection())         // surface normal
+    .penetration(120f)                           // penetration (mm RHA)
     .build();
 
-// Fire the protocol damage
 float dealt = TBDamageApi.hurt(target, ctx);
 ```
 
-If the target implements `TBHurtTarget`, the full armor penetration pipeline runs automatically. Otherwise, it falls back to vanilla `hurt()` with `baseDamage`.
+If the target implements `TBHurtTarget`, the full penetration pipeline runs automatically. Otherwise, it falls back to vanilla `hurt()` with `baseDamage`.
 
-### Armor Mod Side: Implementing TBHurtTarget
+### Weapon Mod — Protocol Damage with Callbacks
+
+To receive hit results (penetration/ricochet/spall/overmatch), implement `TBDamageHandler` and use `dealDamage()`:
 
 ```java
-public class MyArmoredEntity extends LivingEntity implements TBHurtTarget {
+public class MyWeapon implements TBDamageHandler {
 
-    // Return armor thickness for the hit location
-    @Override
-    public float getRHA(TBDamageContext ctx) {
-        // Determine hit region based on ctx.hitPoint()
-        if (isHeadShot(ctx.hitPoint())) return 30f;
-        if (isChest(ctx.hitPoint())) return 50f;
-        return 20f;
+    void fire(Entity target) {
+        TBDamageContext ctx = TBDamageContext.builder()
+            .source(src).baseDamage(35f).penetration(120f)
+            .build();
+        float dealt = this.dealDamage(target, ctx);  // auto-injects self as handler
     }
 
-    // Execute the actual damage
+    // Override as needed; all default to no-op
+
+    @Override
+    public void onPenetrated(TBHurtTarget target, TBDamageContext ctx) {
+        spawnPenEffects(ctx.hitPoint());
+    }
+
+    @Override
+    public void onBlocked(TBHurtTarget target, TBDamageContext ctx) {
+        spawnSparkEffects(ctx.hitPoint());
+    }
+
+    @Override
+    public void onRicochet(TBHurtTarget target, TBDamageContext ctx) {
+        playRicochetSound(ctx.hitPoint());
+    }
+
+    @Override
+    public void onOvermatch(TBHurtTarget target, TBDamageContext ctx) {
+        // Overmatch (full over-penetration) — projectile passes through intact
+    }
+
+    @Override
+    public void onSpall(TBHurtTarget target, TBDamageContext ctx) {
+        // Spall/fragmentation — projectile shatters
+    }
+}
+```
+
+Overmatch and spall are auto-determined by the handler's `isOvermatch()` / `isSpall()` defaults:
+- **Overmatch**: penetrated AND penetration > armor × 1.5 → projectile passes intact, no spall
+- **Spall**: blocked (surface shatter) OR penetrated but not overmatch (shatter during penetration) → spall
+- **Ricochet**: no overmatch, no spall
+
+Override these methods for custom logic.
+
+### Armor Mod — Implementing TBHurtTarget
+
+```java
+public class MyTank extends LivingEntity implements TBHurtTarget {
+
+    @Override
+    public float getRHA(TBDamageContext ctx) {
+        return 50f;  // differentiate hit regions via ctx.hitPoint()
+    }
+
     @Override
     public boolean hurt(DamageSource source, float amount) {
-        // Custom logic, or delegate to vanilla
         return super.hurt(source, amount);
     }
 
-    // Convert vanilla damage (melee, explosion, etc.) to protocol context
-    @Override
+    @Override @Nullable
     public TBDamageContext createContextFromVanilla(DamageSource source, float amount) {
-        // Return null to skip the protocol pipeline for this damage type
-        return null;
+        return null;  // null = fall through to vanilla
     }
 }
 ```
 
-### Overriding Armor Penetration
+### Armor Mod — Ricochet Detection
 
-All key methods in `TBHurtTarget` have overridable default implementations:
+Override `resolvePenetration()` to return `RICOCHET` when the impact angle is too shallow:
 
 ```java
 @Override
-public float modifyPenetration(TBDamageContext ctx) {
-    // Default: penetration / cos(θ) for slope correction
-    // Override for spaced armor, ERA, composite armor, etc.
-    return TBHurtTarget.super.modifyPenetration(ctx);
-}
-
-@Override
-public boolean isArmorPenetrated(TBDamageContext ctx) {
-    // Default: modifiedPen > getRHA
-    return TBHurtTarget.super.isArmorPenetrated(ctx);
-}
-
-@Override
-public float calculateFinalDamage(TBDamageContext ctx) {
-    // Default: baseDamage if penetrated, 0 otherwise
-    return TBHurtTarget.super.calculateFinalDamage(ctx);
+public PenetrationResult resolvePenetration(TBDamageContext ctx) {
+    Vec3 velocity = ctx.hitVelocity();
+    Vec3 normal = ctx.hitNormal();
+    float angle = (float) Math.toDegrees(Math.acos(
+        Math.abs(velocity.dot(normal)) / (velocity.length() * normal.length())));
+    if (angle > 70f) return PenetrationResult.RICOCHET;
+    return super.resolvePenetration(ctx);
 }
 ```
 
-### Using Extension Fields (Side-Channel Communication)
+### Armor Mod — Blunt Damage / Custom Damage
+
+`calculateFinalDamage(ctx, result)` receives the `PenetrationResult` to freely decide damage:
 
 ```java
-// Mark ricochet in getRHA override
-ctx.getExtensions().set(TBDamageExtensions.RICOCHET, true);
-
-// Read it back after damage is dealt
-boolean ricochet = ctx.getExtensions().get(TBDamageExtensions.RICOCHET);
+@Override
+public float calculateFinalDamage(TBDamageContext ctx, PenetrationResult result) {
+    return switch (result) {
+        case RICOCHET -> ctx.baseDamage() * 0.1f;   // 10% shock damage on ricochet
+        case BLOCKED -> ctx.baseDamage() * 0.05f;   // 5% blunt trauma
+        case PENETRATED -> ctx.baseDamage();          // 100% on penetration
+    };
+}
 ```
 
-The protocol ships with four standard extension keys:
+***
 
-- `RICOCHET` (Boolean) — ricochet flag
-- `SPALL` (Boolean) — spall / fragmentation flag
-- `OVERMATCH` (Boolean) — overmatch flag
-- `FUSE_DELAY` (Integer) — fuse delay in ms, 0 = instant
+## Advanced Usage
 
-You can also register your own extension keys on any mod's side.
+### Overridable Pipeline Methods
+
+`TBHurtTarget` defaults are based on the discrete `ArmorLevel` system. Precision mods can override step by step:
+
+| Method | Default | Precision Override |
+|--------|---------|-------------------|
+| `getArmorLevel(ctx)` | **Must implement**, returns discrete level | Delegate to `fromRha(getRHA(ctx))` |
+| `getRHA(ctx)` | median of `getArmorLevel` | Exact RHA thickness |
+| `modifyPenetration(ctx)` | Returns `ctx.penetration()` verbatim | ERA intercept, spaced armor |
+| `isArmorPenetrated(ctx)` | Discrete level comparison | Exact float comparison |
+| `resolvePenetration(ctx)` | Delegates to `isArmorPenetrated` | Add ricochet logic |
+| `calculateFinalDamage(ctx, result)` | 0 / 65% / 100% | Blunt damage, overmatch bonus |
+
+### Querying Damage Source in Armor Logic
+
+```java
+@Override
+public float getRHA(TBDamageContext ctx) {
+    TBDamageHandler h = ctx.getHandler();
+    if (h instanceof ChemicalWeapon) return eraEffectiveRha;  // ERA vs HEAT
+    return baseRha;
+}
+```
 
 ### Retrieving Context Inside hurt()
-
-When you need access to the full `TBDamageContext` (hit point, velocity, side-channel extensions) inside {@link TBHurtTarget#hurt TBHurtTarget.hurt()} for additional post-processing, call {@link TBDamageApi#getContextFor TBDamageApi.getContextFor(this)}:
 
 ```java
 @Override
 public boolean hurt(DamageSource source, float amount) {
     TBDamageContext ctx = TBDamageApi.getContextFor(this);
-    if (ctx != null) {
-        // Play different hit sounds based on location
-        playArmorHitSound(ctx.hitPoint());
-        // Read side-channel flags (set by getRHA override)
-        if (Boolean.TRUE.equals(
-                ctx.extensions().get(TBDamageExtensions.RICOCHET))) {
-            spawnRicochetParticles(ctx.hitPoint(), ctx.hitNormal());
-        }
-        // Adjust spall count based on penetration ratio
-        if (ctx.penetration() > 100f) {
-            spawnSpallParticles(ctx.hitPoint(), 5);
-        }
-    }
+    if (ctx != null) playHitSound(ctx.hitPoint());
     return super.hurt(source, amount);
 }
 ```
 
-This method returns a non-null value only inside the protocol pipeline (between push and pop). It is thread-safe and does not break existing logic.
+`getContextFor(this)` returns non-null only inside the pipeline (between push and pop).
+
+### Using Extensions
+
+Built-in extension keys: `FUSE_DELAY` (Float, s), `CALIBER` (Float, m), `MASS` (Float, kg).
+
+Reads always return non-null (defaults on unset):
+
+```java
+ctx.extensions().set(TBDamageExtensions.CALIBER, 0.12f);   // 120mm
+ctx.extensions().set(TBDamageExtensions.MASS, 22f);         // 22kg APFSDS
+
+float caliber = ctx.extensions().get(TBDamageExtensions.CALIBER);
+```
+
+Register custom extension keys:
+
+```java
+public static final TBDamageExtensionKey<HitBox> HIT_BOX =
+    TBDamageExtensions.register(
+        ResourceLocation.fromNamespaceAndPath("my_mod", "hit_box"),
+        HitBox.class, () -> null);
+```
+
+### All SI Units
+
+| Field | Unit | Description |
+|-------|------|-------------|
+| `hitVelocity` | m/s | Impact velocity vector |
+| `penetration` | mm | RHA equivalent penetration |
+| `FUSE_DELAY` | s | Fuse delay |
+| `CALIBER` | m | Projectile caliber |
+| `MASS` | kg | Projectile mass |
+
+***
 
 ## Architecture Overview
 
 ```
-TBDamageApi.hurt(target, ctx)          ← weapon mod entry point
+TBDamageApi.hurt(target, ctx)          ← weapon mod entry
     │
     ├── target instanceof TBHurtTarget
     │     ├── target.getRHA(ctx)               ← armor thickness
-    │     ├── target.modifyPenetration(ctx)     ← slope correction
-    │     ├── target.isArmorPenetrated(ctx)     ← penetration check
-    │     ├── target.calculateFinalDamage(ctx)  ← final damage calc
-    │     └── target.hurt(source, finalDamage)  ← execute damage
+    │     ├── target.modifyPenetration(ctx)     ← modifier (ERA, slope)
+    │     ├── target.resolvePenetration(ctx)    ← PENETRATED/BLOCKED/RICOCHET
+    │     ├── target.calculateFinalDamage(ctx, result) ← final damage
+    │     ├── target.hurt(source, finalDmg)     ← execute damage
+    │     └── if (handler != null) → triggerCallbacks  ← callbacks
     │
     └── target instanceof LivingEntity
           └── living.hurt(source, baseDamage)   ← vanilla fallback
 ```
 
-Context is implicitly propagated through a ThreadLocal stack. Mixins inject `Entity#hurt` and `LivingEntity#hurt` to intercept non-protocol damage.
-
 Only the `api/` package is exposed to consumers; internal implementations live in the `internal/` package.
+
+***
 
 ## License
 

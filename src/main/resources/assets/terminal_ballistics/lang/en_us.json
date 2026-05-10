@@ -22,5 +22,7 @@
   "armor_level.terminal_ballistics.super_heavy_5.armor": "Super Heavy V",
   "armor_level.terminal_ballistics.super_heavy_5.penetration": "Super Heavy V Pen",
   "armor_level.terminal_ballistics.super_heavy_6.armor": "Super Heavy VI",
-  "armor_level.terminal_ballistics.super_heavy_6.penetration": "Super Heavy VI Pen"
+  "armor_level.terminal_ballistics.super_heavy_6.penetration": "Super Heavy VI Pen",
+  "armor_level.terminal_ballistics.unpenetrable.armor": "Invulnerable",
+  "armor_level.terminal_ballistics.unpenetrable.penetration": "Invulnerable Pen"
 }

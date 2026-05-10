@@ -2,6 +2,7 @@ package io.github.sweetzonzi.terminal_ballistics.api;
 
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
 
@@ -24,6 +25,8 @@ public final class TBDamageContextBuilder {
     private Vec3 hitNormal;
     private float penetration;
     private TBDamageExtensions extensions;
+    @Nullable
+    private TBDamageHandler handler;
 
     TBDamageContextBuilder() {
         this.baseDamage = 0f;
@@ -75,6 +78,12 @@ public final class TBDamageContextBuilder {
         return this;
     }
 
+    /** @param handler 伤害发起方回调接口，默认 null（无回调） */
+    public TBDamageContextBuilder handler(@Nullable TBDamageHandler handler) {
+        this.handler = handler;
+        return this;
+    }
+
     /**
      * 构建上下文。
      *
@@ -92,7 +101,8 @@ public final class TBDamageContextBuilder {
                 hitPoint,
                 hitNormal,
                 penetration,
-                extensions
+                extensions,
+                handler
         );
     }
 }

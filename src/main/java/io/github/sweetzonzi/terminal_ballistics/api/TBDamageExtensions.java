@@ -14,9 +14,13 @@ import java.util.function.Supplier;
  * 每个 {@link TBDamageContext} 持有一个此容器实例，用于携带核心字段以外的任意结构化数据。
  * 读操作总返回非 null——未显式设置时退回注册的默认值。
  * <p>
+ * 容器支持浅拷贝。若多个命中上下文共享一组基础扩展数据，可先构造基础容器，
+ * 再通过 {@link #copy()} 或 {@link #TBDamageExtensions(TBDamageExtensions)}
+ * 为每次命中创建独立副本，并写入命中特定的数据。
+ * <p>
  * 扩展 key 通过 {@link #register(ResourceLocation, Class, Supplier)} 注册，建议存为
- * {@code public static final} 常量。协议库自身预定义的 key 定义在本类上：
- * {@link #RICOCHET}、{@link #SPALL}、{@link #OVERMATCH}、{@link #FUSE_DELAY}。
+ * {@code public static final} 常量。协议自身预定义 key：
+ * {@link #FUSE_DELAY}、{@link #CALIBER}、{@link #MASS}。
  */
 public final class TBDamageExtensions {
 
@@ -44,31 +48,66 @@ public final class TBDamageExtensions {
 
     // ======================== 协议预定义扩展 key ========================
 
-    /** 跳弹标记 */
-    public static final TBDamageExtensionKey<Boolean> RICOCHET =
-            register(ResourceLocation.fromNamespaceAndPath("terminal_ballistics", "ricochet"),
-                    Boolean.class, () -> false);
-
-    /** 破片标记 */
-    public static final TBDamageExtensionKey<Boolean> SPALL =
-            register(ResourceLocation.fromNamespaceAndPath("terminal_ballistics", "spall"),
-                    Boolean.class, () -> false);
-
-    /** 超匹配标记（穿深远超装甲厚度的情况） */
-    public static final TBDamageExtensionKey<Boolean> OVERMATCH =
-            register(ResourceLocation.fromNamespaceAndPath("terminal_ballistics", "overmatch"),
-                    Boolean.class, () -> false);
-
-    /** 引信延迟（ms），0 表示瞬发 */
-    public static final TBDamageExtensionKey<Integer> FUSE_DELAY =
+    /**
+     * 引信延迟（s），0 表示瞬发。
+     * <p>
+     * 注：曾经的 RICOCHET / SPALL / OVERMATCH 常量已移除。
+     * 跳弹由 {@link PenetrationResult#RICOCHET} 表达；
+     * 超匹配(碾压)与破片由 {@link TBDamageHandler#isOvermatch} /
+     * {@link TBDamageHandler#isSpall} 在回调阶段动态判定。
+     */
+    public static final TBDamageExtensionKey<Float> FUSE_DELAY =
             register(ResourceLocation.fromNamespaceAndPath("terminal_ballistics", "fuse_delay"),
-                    Integer.class, () -> 0);
+                    Float.class, () -> 0f);
+
+    /** 弹体口径（m），默认 0.1（100mm，典型坦克炮口径） */
+    public static final TBDamageExtensionKey<Float> CALIBER =
+            register(ResourceLocation.fromNamespaceAndPath("terminal_ballistics", "caliber"),
+                    Float.class, () -> 0.1f);
+
+    /** 弹体质量（kg），默认 10（典型坦克炮穿甲弹质量） */
+    public static final TBDamageExtensionKey<Float> MASS =
+            register(ResourceLocation.fromNamespaceAndPath("terminal_ballistics", "mass"),
+                    Float.class, () -> 10f);
 
     // ======================== 实例方法 ========================
 
     private final Map<TBDamageExtensionKey<?>, Object> data = new HashMap<>();
 
+    /** 创建一个空扩展容器。 */
     public TBDamageExtensions() {}
+
+    /**
+     * 创建一个已有扩展容器的浅拷贝。
+     * <p>
+     * 拷贝后的容器拥有独立的内部映射，后续对两个容器执行 {@link #set}
+     * 不会互相影响。但扩展值对象本身不会被深拷贝；如果某个扩展值是可变对象，
+     * 两个容器仍会引用同一个值实例。建议扩展值优先使用 {@link Float}、
+     * {@link Integer}、{@link Boolean}、{@link String}、枚举或不可变 record。
+     *
+     * @param other 要复制的扩展容器
+     * @throws NullPointerException other 为 null 时抛出
+     */
+    public TBDamageExtensions(TBDamageExtensions other) {
+        Objects.requireNonNull(other, "other");
+        this.data.putAll(other.data);
+    }
+
+    /**
+     * 返回此扩展容器的浅拷贝。
+     * <p>
+     * 常用于为同一种弹药预构造基础扩展数据，并在每次命中时复制后追加
+     * 命中特定字段：
+     * <pre>{@code
+     * TBDamageExtensions perHit = baseExtensions.copy();
+     * perHit.set(TBDamageExtensions.FUSE_DELAY, 0.05f);
+     * }</pre>
+     *
+     * @return 拥有独立内部映射的新扩展容器
+     */
+    public TBDamageExtensions copy() {
+        return new TBDamageExtensions(this);
+    }
 
     /**
      * 读取扩展值。

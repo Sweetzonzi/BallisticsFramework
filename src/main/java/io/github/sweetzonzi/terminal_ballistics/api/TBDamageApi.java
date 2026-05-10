@@ -26,12 +26,19 @@ public final class TBDamageApi {
      * @return 实际造成的伤害量
      */
     public static float hurt(Object target, TBDamageContext ctx) {
-        // 压栈 → 执行穿甲判定与伤害 → finally 出栈
+        TBDamageHandler handler = ctx.getHandler();
         TBContextStack.INSTANCE.push(target, ctx);
         try {
             if (target instanceof TBHurtTarget tb) {
-                float finalDamage = tb.calculateFinalDamage(ctx);
-                return tb.hurt(ctx.source(), finalDamage) ? finalDamage : 0f;
+                PenetrationResult result = tb.resolvePenetration(ctx);
+                float finalDmg = tb.calculateFinalDamage(ctx, result);
+                boolean success = finalDmg > 0f && tb.hurt(ctx.source(), finalDmg);
+                float dealt = success ? finalDmg : 0f;
+
+                if (handler != null) {
+                    triggerCallbacks(handler, tb, ctx, result);
+                }
+                return dealt;
             }
             if (target instanceof Entity entity) {
                 return entity.hurt(ctx.source(), ctx.baseDamage()) ? ctx.baseDamage() : 0f;
@@ -39,6 +46,29 @@ public final class TBDamageApi {
             return 0f;
         } finally {
             TBContextStack.INSTANCE.pop();
+        }
+    }
+
+    /**
+     * 根据穿甲结果触发 handler 上的主结果回调。
+     * <p>
+     * 超匹配(碾压)与破片是武器侧派生事件，不由协议结果分支硬编码。
+     * 协议会在主结果回调之后分别询问 handler 的 {@code isOvermatch} /
+     * {@code isSpall}，返回 true 时触发对应回调。
+     */
+    private static void triggerCallbacks(TBDamageHandler handler, TBHurtTarget target,
+                                          TBDamageContext ctx, PenetrationResult result) {
+        switch (result) {
+            case PENETRATED -> handler.onPenetrated(target, ctx);
+            case BLOCKED -> handler.onBlocked(target, ctx);
+            case RICOCHET -> handler.onRicochet(target, ctx);
+        }
+
+        if (handler.isOvermatch(target, ctx, result)) {
+            handler.onOvermatch(target, ctx);
+        }
+        if (handler.isSpall(target, ctx, result)) {
+            handler.onSpall(target, ctx);
         }
     }
 
@@ -67,13 +97,7 @@ public final class TBDamageApi {
      * public boolean hurt(DamageSource source, float amount) {
      *     TBDamageContext ctx = TBDamageApi.getContextFor(this);
      *     if (ctx != null) {
-     *         // 根据命中位置播放音效
      *         playHitSound(ctx.hitPoint());
-     *         // 读取侧信道跳弹标记
-     *         if (Boolean.TRUE.equals(
-     *                 ctx.extensions().get(TBDamageExtensions.RICOCHET))) {
-     *             playRicochetEffect(ctx.hitPoint(), ctx.hitNormal());
-     *         }
      *     }
      *     return super.hurt(source, amount);
      * }
