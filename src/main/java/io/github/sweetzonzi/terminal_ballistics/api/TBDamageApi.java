@@ -1,7 +1,7 @@
 package io.github.sweetzonzi.terminal_ballistics.api;
 
 import io.github.sweetzonzi.terminal_ballistics.internal.TBContextStack;
-import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Entity;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -21,7 +21,7 @@ public final class TBDamageApi {
      * <p>
      * 自动完成穿甲判定并执行最终伤害。调用方只需构造上下文后传入即可。
      *
-     * @param target 伤害目标（{@link TBHurtTarget} 或普通 {@link LivingEntity}）
+     * @param target 伤害目标（{@link TBHurtTarget} 或普通 {@link Entity}）
      * @param ctx    完整命中上下文
      * @return 实际造成的伤害量
      */
@@ -33,8 +33,8 @@ public final class TBDamageApi {
                 float finalDamage = tb.calculateFinalDamage(ctx);
                 return tb.hurt(ctx.source(), finalDamage) ? finalDamage : 0f;
             }
-            if (target instanceof LivingEntity living) {
-                return living.hurt(ctx.source(), ctx.baseDamage()) ? ctx.baseDamage() : 0f;
+            if (target instanceof Entity entity) {
+                return entity.hurt(ctx.source(), ctx.baseDamage()) ? ctx.baseDamage() : 0f;
             }
             return 0f;
         } finally {
