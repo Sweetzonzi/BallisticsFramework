@@ -1,18 +1,17 @@
 package io.github.sweetzonzi.terminal_ballistics.api;
 
 import net.minecraft.world.damagesource.DamageSource;
-import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 /**
  * 协议伤害目标接口。
  * <p>
- * 实现此接口的类型将参与完整的协议穿甲判定流程。
- * 实现者必须提供：护甲厚度、伤害执行逻辑、协议外伤害转换逻辑。
- * 穿甲判定和伤害修正可通过覆写默认方法自定义。
+ * 默认实现基于离散的 {@link ArmorLevel 穿甲/护甲等级}体系，简单模组只需实现
+ * {@link #getArmorLevel} 即可获得完整的穿甲判定行为。
+ * 需要精确数值判定的模组应同时覆写 {@link #getRHA}、{@link #modifyPenetration}、
+ * {@link #isArmorPenetrated}、{@link #calculateFinalDamage}。
  * <p>
- * 对于同时是 {@code LivingEntity} 的实现者，{@link #hurt} 可选择
- * {@code return super.hurt(source, amount)} 委托给原版管线，也可完全自定义。
+ * 穿深的角度效应等应由弹头/武器模组在构造 {@link TBDamageContext} 前计算，
  * <p>
  * 协议层调用顺序：
  * {@link #getRHA} → {@link #modifyPenetration} → {@link #isArmorPenetrated}
@@ -21,65 +20,72 @@ import org.jetbrains.annotations.Nullable;
 public interface TBHurtTarget {
 
     /**
+     * 返回此命中部位对应的离散护甲等级。
+     * <p>
+     * 简单模组只需实现此方法即可，默认的穿甲判定、伤害计算均基于此等级进行。
+     *
+     * @param ctx 命中上下文
+     * @return 此命中部位对应的护甲等级
+     */
+    ArmorLevel getArmorLevel(TBDamageContext ctx);
+
+    /**
      * 返回命中部位的垂直 RHA 等效厚度（mm）。
      * <p>
-     * 实现者应根据命中几何信息推算部位并返回该部位的基础装甲厚度。
+     * 默认实现取 {@link #getArmorLevel} 的中位值。
+     * 需要精确数值判定的模组应覆写此方法。
      *
      * @param ctx 命中上下文
      * @return RHA 等效厚度（mm）。0 表示无装甲；{@code Float.MAX_VALUE} 表示绝对不可穿透
      */
-    float getRHA(TBDamageContext ctx);
+    default float getRHA(TBDamageContext ctx) {
+        return getArmorLevel(ctx).medianRha();
+    }
 
     /**
-     * 修正穿深，默认按入射角做斜穿修正。
+     * 修正穿深，默认直接返回原始值。
      * <p>
-     * 默认实现：{@code ctx.penetration / cos(θ)}，θ 为速度与法线反方向的夹角。
-     * 可覆写以实现间隙衰减、爆反拦截、复合装甲等逻辑。
+     * 穿深的角度效应等应由弹头/武器模组在构造 {@link TBDamageContext} 前计算。
+     * 此方法作为 hook 保留，供护甲模组实现爆反拦截、间隙衰减等减效逻辑。
      *
      * @param ctx 命中上下文
-     * @return 修正后的有效穿深
+     * @return 修正后的有效穿深。默认直接返回 {@code ctx.penetration()}
      */
     default float modifyPenetration(TBDamageContext ctx) {
-        Vec3 vel = ctx.hitVelocity();
-        Vec3 normal = ctx.hitNormal();
-
-        double velLen = vel.length();
-        double normalLen = normal.length();
-        if (velLen < 1e-6 || normalLen < 1e-6) {
-            return ctx.penetration();
-        }
-
-        double cosTheta = Math.abs(vel.dot(normal)) / (velLen * normalLen);
-        if (cosTheta < 1e-6) {
-            return Float.MAX_VALUE;
-        }
-        return (float) (ctx.penetration() / cosTheta);
+        return ctx.penetration();
     }
 
     /**
      * 判断是否击穿装甲。
      * <p>
-     * 默认比较 {@link #modifyPenetration} 与 {@link #getRHA}。
-     * 可覆写实现多层部分穿透等非二元判定。
+     * 默认基于离散等级比较（等于算击穿）。
+     * 需要精确浮点比较的模组应覆写此方法。
      *
      * @param ctx 命中上下文
      * @return true 表示击穿
      */
     default boolean isArmorPenetrated(TBDamageContext ctx) {
-        return modifyPenetration(ctx) > getRHA(ctx);
+        return ctx.getPenetrationLevel().canDefeat(getArmorLevel(ctx));
     }
 
     /**
      * 根据击穿结果计算最终伤害量。
      * <p>
-     * 默认：击穿返回 {@code ctx.baseDamage}，未击穿返回 0。
-     * 可覆写实现部分穿透、超匹配加成等。
+     * 默认分三级：
+     * <ul>
+     *   <li>未击穿：0</li>
+     *   <li>击穿但同级（刚好击穿）：标称伤害的 65%</li>
+     *   <li>完全击穿（穿甲等级高于护甲等级）：标称伤害的 100%</li>
+     * </ul>
+     * 需要精确伤害曲线的模组应覆写此方法。
      *
      * @param ctx 命中上下文
      * @return 最终伤害量
      */
     default float calculateFinalDamage(TBDamageContext ctx) {
-        return isArmorPenetrated(ctx) ? ctx.baseDamage() : 0f;
+        if (!isArmorPenetrated(ctx)) return 0f;
+        if (ctx.getPenetrationLevel() == getArmorLevel(ctx)) return ctx.baseDamage() * 0.65f;
+        return ctx.baseDamage();
     }
 
     /**

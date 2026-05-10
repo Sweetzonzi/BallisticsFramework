@@ -47,4 +47,16 @@ public record TBDamageContext(
     public static TBDamageContextBuilder builder() {
         return new TBDamageContextBuilder();
     }
+
+    /**
+     * 获取此上下文的穿深所对应的穿甲等级。
+     * <p>
+     * 等同于 {@code ArmorLevel.fromRha(this.penetration)}。
+     * 用于在离散等级视角下理解武器的穿甲能力。
+     *
+     * @return 穿甲等级
+     */
+    public ArmorLevel getPenetrationLevel() {
+        return ArmorLevel.fromRha(this.penetration);
+    }
 }
