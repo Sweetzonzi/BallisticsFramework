@@ -24,29 +24,29 @@ import java.util.Objects;
 public enum ArmorLevel {
 
     /** 0~1mm，血肉、无保护裸露表面 */
-    UNARMORED_1(1f),
+    UNARMORED_1(0f, 1f),
     /** 1~3mm，几丁质甲壳、木板、薄塑料壳 */
-    UNARMORED_2(3f),
+    UNARMORED_2(1f, 3f),
     /** 3~5mm，轻型防弹衣、铁皮、铝合金薄板 */
-    LIGHT_1(5f),
+    LIGHT_1(3f, 5f),
     /** 5~10mm，重型防弹衣、装甲车门 */
-    LIGHT_2(10f),
+    LIGHT_2(5f, 10f),
     /** 10~20mm，一般车辆车架、步战车侧后方 */
-    MEDIUM(20f),
+    MEDIUM(10f, 20f),
     /** 20~40mm，步战车正面、坦克侧后/顶部 */
-    HEAVY(40f),
+    HEAVY(20f, 40f),
     /** 40~80mm，二战早期中型坦克正面（T-34、谢尔曼） */
-    SUPER_HEAVY_1(80f),
+    SUPER_HEAVY_1(40f, 80f),
     /** 80~150mm，二战晚期重型坦克正面（虎王、IS-2） */
-    SUPER_HEAVY_2(150f),
+    SUPER_HEAVY_2(80f, 150f),
     /** 150~300mm，冷战早期主战坦克（T-55、M48） */
-    SUPER_HEAVY_3(300f),
+    SUPER_HEAVY_3(150f, 300f),
     /** 300~600mm，冷战中期+爆反（T-72、M60A3 ERA） */
-    SUPER_HEAVY_4(600f),
+    SUPER_HEAVY_4(300f, 600f),
     /** 600~1200mm，冷战晚期现代MBT（豹2A4、M1A1 HA） */
-    SUPER_HEAVY_5(1200f),
+    SUPER_HEAVY_5(600f, 1200f),
     /** 1200~2000mm */
-    SUPER_HEAVY_6(2000f),
+    SUPER_HEAVY_6(1200f, 2000f),
     /**
      * 绝对不可击穿等级（元等级）。
      * <p>
@@ -60,17 +60,20 @@ public enum ArmorLevel {
      *       返回此值也会导致 {@code modifyPenetration > getRHA} 始终为 false。</li>
      * </ul>
      */
-    UNPENETRABLE(Float.POSITIVE_INFINITY);
+    UNPENETRABLE(2000f, Float.POSITIVE_INFINITY);
 
     private final float upperRha;
     private final float lowerRha;
     private final ResourceLocation armorDisplayName;
     private final ResourceLocation penetrationDisplayName;
 
-    ArmorLevel(float upperRha) {
+    /**
+     * @param lowerRha 本等级的 RHA 下限（mm），不包含该值。第一级为 0
+     * @param upperRha 本等级的 RHA 上限（mm），包含该值
+     */
+    ArmorLevel(float lowerRha, float upperRha) {
+        this.lowerRha = lowerRha;
         this.upperRha = upperRha;
-        // 第一个等级下限为 0，其余为上一级上限
-        this.lowerRha = ordinal() == 0 ? 0f : values()[ordinal() - 1].upperRha;
         String name = name().toLowerCase();
         this.armorDisplayName = ResourceLocation.fromNamespaceAndPath("ballistics_framework", "armor_level/" + name + "/armor");
         this.penetrationDisplayName = ResourceLocation.fromNamespaceAndPath("ballistics_framework", "armor_level/" + name + "/penetration");
