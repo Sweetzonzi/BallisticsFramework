@@ -1,10 +1,10 @@
-# Terminal Ballistics Protocol — A Ballistics Damage Protocol Layer
+# Ballistics Framework — A Ballistics Damage Protocol Layer
 
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green)
 ![NeoForge](https://img.shields.io/badge/NeoForge-21.1.219-blue)
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![License](https://img.shields.io/badge/License-LGPL%203.0-blue)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Sweetzonzi/TerminalBallistics)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Sweetzonzi/BallisticsFramework)
 
 [中文版](README.md)
 
@@ -12,7 +12,7 @@
 
 ## What is This?
 
-TerminalBallistics is a NeoForge (1.21.1) library mod that defines a **Terminal Ballistics Damage Protocol Layer** for the Minecraft modding ecosystem.
+BallisticsFramework is a NeoForge (1.21.1) library mod that defines a **Terminal Ballistics Damage Protocol Layer** for the Minecraft modding ecosystem.
 
 It serves as a compatibility protocol that multiple gun, vehicle, and armor mods can depend on together. Problems it solves:
 
@@ -30,7 +30,7 @@ The protocol's guiding principle is **wrap, don't replace** — it never bypasse
 ./gradlew build
 ```
 
-Output at `build/libs/terminal_ballistics-1.21.1-1.0-SNAPSHOT.jar`.
+Output at `build/libs/ballistics_framework-1.21.1-1.0-SNAPSHOT.jar`.
 
 Dependency via flatDir local jar or source-set dependency; declare in `neoforge.mods.toml`.
 
@@ -41,7 +41,7 @@ Dependency via flatDir local jar or source-set dependency; declare in `neoforge.
 ### Weapon Mod — Basic Protocol Damage
 
 ```java
-TBDamageContext ctx = TBDamageContext.builder()
+BFDamageContext ctx = BFDamageContext.builder()
     .source(source)                              // vanilla DamageSource
     .baseDamage(35f)                             // nominal damage
     .hitVelocity(bullet.getDeltaMovement())      // velocity (m/s)
@@ -50,20 +50,20 @@ TBDamageContext ctx = TBDamageContext.builder()
     .penetration(120f)                           // penetration (mm RHA)
     .build();
 
-float dealt = TBDamageApi.hurt(target, ctx);
+float dealt = BFDamageApi.hurt(target, ctx);
 ```
 
-If the target implements `TBHurtTarget`, the full penetration pipeline runs automatically. Otherwise, it falls back to vanilla `hurt()` with `baseDamage`.
+If the target implements `BFHurtTarget`, the full penetration pipeline runs automatically. Otherwise, it falls back to vanilla `hurt()` with `baseDamage`.
 
 ### Weapon Mod — Protocol Damage with Callbacks
 
-To receive hit results (penetration/ricochet/spall/overmatch), implement `TBDamageHandler` and use `dealDamage()`:
+To receive hit results (penetration/ricochet/spall/overmatch), implement `BFDamageHandler` and use `dealDamage()`:
 
 ```java
-public class MyWeapon implements TBDamageHandler {
+public class MyWeapon implements BFDamageHandler {
 
     void fire(Entity target) {
-        TBDamageContext ctx = TBDamageContext.builder()
+        BFDamageContext ctx = BFDamageContext.builder()
             .source(src).baseDamage(35f).penetration(120f)
             .build();
         float dealt = this.dealDamage(target, ctx);  // auto-injects self as handler
@@ -72,27 +72,27 @@ public class MyWeapon implements TBDamageHandler {
     // Override as needed; all default to no-op
 
     @Override
-    public void onPenetrated(TBHurtTarget target, TBDamageContext ctx) {
+    public void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {
         spawnPenEffects(ctx.hitPoint());
     }
 
     @Override
-    public void onBlocked(TBHurtTarget target, TBDamageContext ctx) {
+    public void onBlocked(BFHurtTarget target, BFDamageContext ctx) {
         spawnSparkEffects(ctx.hitPoint());
     }
 
     @Override
-    public void onRicochet(TBHurtTarget target, TBDamageContext ctx) {
+    public void onRicochet(BFHurtTarget target, BFDamageContext ctx) {
         playRicochetSound(ctx.hitPoint());
     }
 
     @Override
-    public void onOvermatch(TBHurtTarget target, TBDamageContext ctx) {
+    public void onOvermatch(BFHurtTarget target, BFDamageContext ctx) {
         // Overmatch (full over-penetration) — projectile passes through intact
     }
 
     @Override
-    public void onSpall(TBHurtTarget target, TBDamageContext ctx) {
+    public void onSpall(BFHurtTarget target, BFDamageContext ctx) {
         // Spall/fragmentation — projectile shatters
     }
 }
@@ -105,13 +105,13 @@ Overmatch and spall are auto-determined by the handler's `isOvermatch()` / `isSp
 
 Override these methods for custom logic.
 
-### Armor Mod — Implementing TBHurtTarget
+### Armor Mod — Implementing BFHurtTarget
 
 ```java
-public class MyTank extends LivingEntity implements TBHurtTarget {
+public class MyTank extends LivingEntity implements BFHurtTarget {
 
     @Override
-    public float getRHA(TBDamageContext ctx) {
+    public float getRHA(BFDamageContext ctx) {
         return 50f;  // differentiate hit regions via ctx.hitPoint()
     }
 
@@ -121,7 +121,7 @@ public class MyTank extends LivingEntity implements TBHurtTarget {
     }
 
     @Override @Nullable
-    public TBDamageContext createContextFromVanilla(DamageSource source, float amount) {
+    public BFDamageContext createContextFromVanilla(DamageSource source, float amount) {
         return null;  // null = fall through to vanilla
     }
 }
@@ -133,7 +133,7 @@ Override `resolvePenetration()` to return `RICOCHET` when the impact angle is to
 
 ```java
 @Override
-public PenetrationResult resolvePenetration(TBDamageContext ctx) {
+public PenetrationResult resolvePenetration(BFDamageContext ctx) {
     Vec3 velocity = ctx.hitVelocity();
     Vec3 normal = ctx.hitNormal();
     float angle = (float) Math.toDegrees(Math.acos(
@@ -149,7 +149,7 @@ public PenetrationResult resolvePenetration(TBDamageContext ctx) {
 
 ```java
 @Override
-public float calculateFinalDamage(TBDamageContext ctx, PenetrationResult result) {
+public float calculateFinalDamage(BFDamageContext ctx, PenetrationResult result) {
     return switch (result) {
         case RICOCHET -> ctx.baseDamage() * 0.1f;   // 10% shock damage on ricochet
         case BLOCKED -> ctx.baseDamage() * 0.05f;   // 5% blunt trauma
@@ -164,7 +164,7 @@ public float calculateFinalDamage(TBDamageContext ctx, PenetrationResult result)
 
 ### Overridable Pipeline Methods
 
-`TBHurtTarget` defaults are based on the discrete `ArmorLevel` system. Precision mods can override step by step:
+`BFHurtTarget` defaults are based on the discrete `ArmorLevel` system. Precision mods can override step by step:
 
 | Method | Default | Precision Override |
 |--------|---------|-------------------|
@@ -179,8 +179,8 @@ public float calculateFinalDamage(TBDamageContext ctx, PenetrationResult result)
 
 ```java
 @Override
-public float getRHA(TBDamageContext ctx) {
-    TBDamageHandler h = ctx.getHandler();
+public float getRHA(BFDamageContext ctx) {
+    BFDamageHandler h = ctx.getHandler();
     if (h instanceof ChemicalWeapon) return eraEffectiveRha;  // ERA vs HEAT
     return baseRha;
 }
@@ -191,7 +191,7 @@ public float getRHA(TBDamageContext ctx) {
 ```java
 @Override
 public boolean hurt(DamageSource source, float amount) {
-    TBDamageContext ctx = TBDamageApi.getContextFor(this);
+    BFDamageContext ctx = BFDamageApi.getContextFor(this);
     if (ctx != null) playHitSound(ctx.hitPoint());
     return super.hurt(source, amount);
 }
@@ -206,17 +206,17 @@ Built-in extension keys: `FUSE_DELAY` (Float, s), `CALIBER` (Float, m), `MASS` (
 Reads always return non-null (defaults on unset):
 
 ```java
-ctx.extensions().set(TBDamageExtensions.CALIBER, 0.12f);   // 120mm
-ctx.extensions().set(TBDamageExtensions.MASS, 22f);         // 22kg APFSDS
+ctx.extensions().set(BFDamageExtensions.CALIBER, 0.12f);   // 120mm
+ctx.extensions().set(BFDamageExtensions.MASS, 22f);         // 22kg APFSDS
 
-float caliber = ctx.extensions().get(TBDamageExtensions.CALIBER);
+float caliber = ctx.extensions().get(BFDamageExtensions.CALIBER);
 ```
 
 Register custom extension keys:
 
 ```java
-public static final TBDamageExtensionKey<HitBox> HIT_BOX =
-    TBDamageExtensions.register(
+public static final BFDamageExtensionKey<HitBox> HIT_BOX =
+    BFDamageExtensions.register(
         ResourceLocation.fromNamespaceAndPath("my_mod", "hit_box"),
         HitBox.class, () -> null);
 ```
@@ -236,9 +236,9 @@ public static final TBDamageExtensionKey<HitBox> HIT_BOX =
 ## Architecture Overview
 
 ```
-TBDamageApi.hurt(target, ctx)          ← weapon mod entry
+BFDamageApi.hurt(target, ctx)          ← weapon mod entry
     │
-    ├── target instanceof TBHurtTarget
+    ├── target instanceof BFHurtTarget
     │     ├── target.getRHA(ctx)               ← armor thickness
     │     ├── target.modifyPenetration(ctx)     ← modifier (ERA, slope)
     │     ├── target.resolvePenetration(ctx)    ← PENETRATED/BLOCKED/RICOCHET

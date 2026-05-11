@@ -1,6 +1,6 @@
-package io.github.sweetzonzi.terminal_ballistics.mixin;
+package io.github.sweetzonzi.ballistics_framework.mixin;
 
-import io.github.sweetzonzi.terminal_ballistics.internal.TBHurtInterceptor;
+import io.github.sweetzonzi.ballistics_framework.internal.BFHurtInterceptor;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.LivingEntity;
 import org.spongepowered.asm.mixin.Mixin;
@@ -23,6 +23,6 @@ public class LivingEntityHurtMixin {
     @Inject(method = "hurt", at = @At("HEAD"), cancellable = true)
     private void tb$onLivingHurt(DamageSource source, float amount,
                                   CallbackInfoReturnable<Boolean> cir) {
-        TBHurtInterceptor.intercept((LivingEntity) (Object) this, source, amount, cir);
+        BFHurtInterceptor.intercept((LivingEntity) (Object) this, source, amount, cir);
     }
 }

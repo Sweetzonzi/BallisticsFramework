@@ -1,4 +1,4 @@
-package io.github.sweetzonzi.terminal_ballistics.api;
+package io.github.sweetzonzi.ballistics_framework.api;
 
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.phys.Vec3;
@@ -9,8 +9,8 @@ import java.util.Objects;
 /**
  * 一次完整命中行为的上下文数据。
  * <p>
- * 武器模组构造此对象后传入 {@link TBDamageApi#hurt(Object, TBDamageContext)}。
- * 构造方式：{@code TBDamageContext.builder().source(source).xxx().build()}。
+ * 武器模组构造此对象后传入 {@link BFDamageApi#hurt(Object, BFDamageContext)}。
+ * 构造方式：{@code BFDamageContext.builder().source(source).xxx().build()}。
  * 构造完成后各字段只读。
  *
  * @param source      伤害来源。attacker、projectile、damage type 等均从中获取
@@ -22,15 +22,15 @@ import java.util.Objects;
  * @param extensions  类型安全扩展容器。供高级模组携带核心字段以外的任意结构化数据
  * @param handler     伤害发起方回调接口，可选（null 表示无回调）
  */
-public record TBDamageContext(
+public record BFDamageContext(
         DamageSource source,
         float baseDamage,
         Vec3 hitVelocity,
         Vec3 hitPoint,
         Vec3 hitNormal,
         float penetration,
-        TBDamageExtensions extensions,
-        @Nullable TBDamageHandler handler
+        BFDamageExtensions extensions,
+        @Nullable BFDamageHandler handler
 ) {
 
     /**
@@ -39,7 +39,7 @@ public record TBDamageContext(
      *
      * @throws NullPointerException 当 source、hitVelocity、hitPoint、hitNormal、extensions 任一为 null
      */
-    public TBDamageContext {
+    public BFDamageContext {
         Objects.requireNonNull(source, "source");
         Objects.requireNonNull(hitVelocity, "hitVelocity");
         Objects.requireNonNull(hitPoint, "hitPoint");
@@ -48,20 +48,20 @@ public record TBDamageContext(
     }
 
     /** @return 一个新的 Builder */
-    public static TBDamageContextBuilder builder() {
-        return new TBDamageContextBuilder();
+    public static BFDamageContextBuilder builder() {
+        return new BFDamageContextBuilder();
     }
 
     /**
      * 获取伤害发起方回调接口。
      * <p>
-     * 护甲侧可在 {@link TBHurtTarget#getRHA} 等方法内通过此方法查询"谁在打我"，
+     * 护甲侧可在 {@link BFHurtTarget#getRHA} 等方法内通过此方法查询"谁在打我"，
      * 做精细判定（如爆反是否对该弹药类型生效）。
      *
      * @return handler，未设置时为 null
      */
     @Nullable
-    public TBDamageHandler getHandler() {
+    public BFDamageHandler getHandler() {
         return handler;
     }
 
@@ -71,8 +71,8 @@ public record TBDamageContext(
      * @param handler 新的 handler，可为 null
      * @return 新上下文实例
      */
-    public TBDamageContext withHandler(@Nullable TBDamageHandler handler) {
-        return new TBDamageContext(source, baseDamage, hitVelocity,
+    public BFDamageContext withHandler(@Nullable BFDamageHandler handler) {
+        return new BFDamageContext(source, baseDamage, hitVelocity,
                 hitPoint, hitNormal, penetration, extensions, handler);
     }
 

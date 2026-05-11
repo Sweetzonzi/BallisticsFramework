@@ -2,7 +2,7 @@
 
 ## 基础概念
 
-### Q: TerminalBallistics 是什么？它是独立模组吗？
+### Q: BallisticsFramework 是什么？它是独立模组吗？
 
 它是 NeoForge 的 lib 库模组。单独安装不会对游戏产生任何可见变化——它只为依赖它的枪械、载具、护甲模组提供一套标准化的弹道伤害协议。所有公开 API 集中在 `api` 包中。
 
@@ -12,16 +12,16 @@
 
 ```toml
 [[dependencies."你的modid"]]
-    modId = "terminal_ballistics"
+    modId = "ballistics_framework"
     type = "required"
     versionRange = "[1.0,)"
 ```
 
 详见 [1.2 安装与依赖配置](../1-快速上手/1.2-安装与依赖配置.md)。
 
-### Q: TerminalBallistics 和原版护甲系统（Armor/ArmorMaterial）冲突吗？
+### Q: BallisticsFramework 和原版护甲系统（Armor/ArmorMaterial）冲突吗？
 
-不冲突。协议设计原则是"包裹原版，不替代原版"。对于实现了 `TBHurtTarget` 的实体，协议伤害走完整穿甲管线后再进入原版 `hurt`——如果 `hurt` 内调用了 `super.hurt()`，原版护甲还会再削减一次。如果你想完全避开原版护甲，可以不调用 `super.hurt` 而直接操作 health。
+不冲突。协议设计原则是"包裹原版，不替代原版"。对于实现了 `BFHurtTarget` 的实体，协议伤害走完整穿甲管线后再进入原版 `hurt`——如果 `hurt` 内调用了 `super.hurt()`，原版护甲还会再削减一次。如果你想完全避开原版护甲，可以不调用 `super.hurt` 而直接操作 health。
 
 ***
 
@@ -45,19 +45,19 @@ Vec3 hitVelocity = projectileEntity.getDeltaMovement().scale(20.0);
 
 ### Q: extensions 需要手动创建吗？
 
-不需要。如果 Builder 未调用 `.extensions(exts)`，`build()` 会自动创建一个空的 `TBDamageExtensions` 实例。`ctx.extensions()` 永远不为 null。
+不需要。如果 Builder 未调用 `.extensions(exts)`，`build()` 会自动创建一个空的 `BFDamageExtensions` 实例。`ctx.extensions()` 永远不为 null。
 
 ***
 
 ## 装甲判定
 
-### Q: 我让实体实现了 TBHurtTarget，但子弹打它仍然绕过了装甲？
+### Q: 我让实体实现了 BFHurtTarget，但子弹打它仍然绕过了装甲？
 
 检查以下几点：
 
 1. `getArmorLevel(ctx)` 是否被正确覆写？是否漏了 `@Override`？
 2. 是否误将 `createContextFromVanilla` 返回了 `null` 导致原版伤害绕过了管线？
-3. 武器侧是否通过 `TBDamageApi.hurt()` 发起了伤害？如果武器侧没有依赖本 lib，伤害会走原版路径，不会触发穿甲管线。
+3. 武器侧是否通过 `BFDamageApi.hurt()` 发起了伤害？如果武器侧没有依赖本 lib，伤害会走原版路径，不会触发穿甲管线。
 
 ### Q: 默认判定下，穿深刚好等于装甲厚度时算击穿吗？
 
@@ -81,7 +81,7 @@ Vec3 hitVelocity = projectileEntity.getDeltaMovement().scale(20.0);
 
 ### Q: 如何在武器侧和护甲侧之间传递自定义数据？
 
-使用扩展机制。在武器侧通过 `exts.set(key, value)` 写入，护甲侧通过 `ctx.extensions().get(key)` 读取。Key 通过 `TBDamageExtensions.register()` 注册并保存为 `public static final` 常量。详见 [2.5 侧信道扩展](../2-武器侧开发/2.5-侧信道扩展.md)。
+使用扩展机制。在武器侧通过 `exts.set(key, value)` 写入，护甲侧通过 `ctx.extensions().get(key)` 读取。Key 通过 `BFDamageExtensions.register()` 注册并保存为 `public static final` 常量。详见 [2.5 侧信道扩展](../2-武器侧开发/2.5-侧信道扩展.md)。
 
 ### Q: 注册扩展 key 时报异常 "duplicate key"？
 
@@ -115,8 +115,8 @@ Vec3 hitVelocity = projectileEntity.getDeltaMovement().scale(20.0);
 
 检查以下几点：
 
-1. 目标是否实现了 `TBHurtTarget`？普通实体走原版 `entity.hurt()`，不会触发回调。
-2. 是否使用了 `dealDamage(target, ctx)` 或 `ctx.withHandler(handler)`？直接用 `TBDamageApi.hurt(target, ctx)` 时，如果上下文中没有注入 handler，回调不会触发。
+1. 目标是否实现了 `BFHurtTarget`？普通实体走原版 `entity.hurt()`，不会触发回调。
+2. 是否使用了 `dealDamage(target, ctx)` 或 `ctx.withHandler(handler)`？直接用 `BFDamageApi.hurt(target, ctx)` 时，如果上下文中没有注入 handler，回调不会触发。
 3. 穿甲结果对应的回调是否被覆写？例如 `onBlocked` 被调用但你没有覆写它。
 
 ### Q: 一次命中最少触发几个回调？
@@ -125,7 +125,7 @@ Vec3 hitVelocity = projectileEntity.getDeltaMovement().scale(20.0);
 
 ### Q: 回调中能知道实际造成了多少伤害吗？
 
-`TBDamageApi.hurt()` 的返回值就是实际造成的伤害量。在回调中你也可以通过 `ctx.getHandler() instanceof MyHandler` 等方式间接获取——但最直接的方式是保存 `hurt()` 的返回值。
+`BFDamageApi.hurt()` 的返回值就是实际造成的伤害量。在回调中你也可以通过 `ctx.getHandler() instanceof MyHandler` 等方式间接获取——但最直接的方式是保存 `hurt()` 的返回值。
 
 ***
 
@@ -133,9 +133,9 @@ Vec3 hitVelocity = projectileEntity.getDeltaMovement().scale(20.0);
 
 ### Q: 协议的 ThreadLocal 上下文栈是什么意思？我需要关心吗？
 
-不需要。`TBDamageApi.hurt()` 内部自动完成 ThreadLocal 栈的压入（push）和弹出（pop），你只需调用 `hurt()` 即可。`getContextFor()` 和 `hasContextFor()` 都是通过这个栈工作的，但你不必直接操作它。
+不需要。`BFDamageApi.hurt()` 内部自动完成 ThreadLocal 栈的压入（push）和弹出（pop），你只需调用 `hurt()` 即可。`getContextFor()` 和 `hasContextFor()` 都是通过这个栈工作的，但你不必直接操作它。
 
-### Q: 能在非主线程调用 TBDamageApi.hurt() 吗？
+### Q: 能在非主线程调用 BFDamageApi.hurt() 吗？
 
 协议本身不限制线程。但如果 `target.hurt()` 内部访问了 Minecraft 非线程安全的世界状态，可能会出问题。建议始终在主线程发起伤害。
 
@@ -143,10 +143,10 @@ Vec3 hitVelocity = projectileEntity.getDeltaMovement().scale(20.0);
 
 ## Mixin 兼容性
 
-### Q: TerminalBallistics 的 Mixin 会和其他模组冲突吗？
+### Q: BallisticsFramework 的 Mixin 会和其他模组冲突吗？
 
-协议仅注入 `Entity#hurt` 和 `LivingEntity#hurt` 的 HEAD 阶段（`cancellable=true`）。如果目标不是 `TBHurtTarget`，注入点直接放行，不会影响其他模组。如果多个 mod 同时注入同一方法的同一阶段，Mixin 的注入顺序由依赖关系决定——通常不会冲突，但如果遇到问题，可以在 issue tracker 中报告。
+协议仅注入 `Entity#hurt` 和 `LivingEntity#hurt` 的 HEAD 阶段（`cancellable=true`）。如果目标不是 `BFHurtTarget`，注入点直接放行，不会影响其他模组。如果多个 mod 同时注入同一方法的同一阶段，Mixin 的注入顺序由依赖关系决定——通常不会冲突，但如果遇到问题，可以在 issue tracker 中报告。
 
 ### Q: 我的护甲模组也想注入 Entity#hurt，会冲突吗？
 
-如果你的注入点和 TerminalBallistics 注入同一个方法，且都是 HEAD 阶段，两个注入都会执行（Mixin 允许多个注入共存）。需要注意不要让你的注入逻辑和 `createContextFromVanilla` 产生循环——如果 Mixin 拦截到协议管线内部的 `hurt` 调用，协议的重入守卫（`hasContextFor`）应能阻止循环。
+如果你的注入点和 BallisticsFramework 注入同一个方法，且都是 HEAD 阶段，两个注入都会执行（Mixin 允许多个注入共存）。需要注意不要让你的注入逻辑和 `createContextFromVanilla` 产生循环——如果 Mixin 拦截到协议管线内部的 `hurt` 调用，协议的重入守卫（`hasContextFor`）应能阻止循环。

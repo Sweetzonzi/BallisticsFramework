@@ -1,7 +1,7 @@
 {
   "required": true,
   "minVersion": "0.8",
-  "package": "io.github.sweetzonzi.terminal_ballistics.mixin",
+  "package": "io.github.sweetzonzi.ballistics_framework.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "EntityHurtMixin",

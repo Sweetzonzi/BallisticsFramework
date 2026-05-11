@@ -1,10 +1,10 @@
-# Terminal Ballistics Protocol — 终点弹道协议
+# Ballistics Framework — 弹道框架
 
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green)
 ![NeoForge](https://img.shields.io/badge/NeoForge-21.1.219-blue)
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![License](https://img.shields.io/badge/License-LGPL%203.0-blue)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Sweetzonzi/TerminalBallistics)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Sweetzonzi/BallisticsFramework)
 
 [English](README.en.md)
 
@@ -12,7 +12,7 @@
 
 ## 这是什么？
 
-TerminalBallistics 是一个 NeoForge（1.21.1）lib 模组，为 Minecraft 模组生态定义了一套 **终点弹道伤害协议层**。
+BallisticsFramework 是一个 NeoForge（1.21.1）lib 模组，为 Minecraft 模组生态定义了一套 **终点弹道伤害协议层**。
 
 核心定位是一个可供多个枪械、载具、护甲模组共同依赖的兼容协议。协议解决的问题：
 
@@ -30,7 +30,7 @@ TerminalBallistics 是一个 NeoForge（1.21.1）lib 模组，为 Minecraft 模�
 ./gradlew build
 ```
 
-产物位于 `build/libs/terminal_ballistics-1.21.1-1.0-SNAPSHOT.jar`。
+产物位于 `build/libs/ballistics_framework-1.21.1-1.0-SNAPSHOT.jar`。
 
 依赖方式：flatDir 本地 jar 或源集依赖，参照 `neoforge.mods.toml` 添加 dependency 声明。
 
@@ -41,7 +41,7 @@ TerminalBallistics 是一个 NeoForge（1.21.1）lib 模组，为 Minecraft 模�
 ### 武器模组——发起协议伤害
 
 ```java
-TBDamageContext ctx = TBDamageContext.builder()
+BFDamageContext ctx = BFDamageContext.builder()
     .source(source)                              // 原版 DamageSource
     .baseDamage(35f)                             // 标称伤害
     .hitVelocity(bullet.getDeltaMovement())      // 速度矢量（m/s）
@@ -50,20 +50,20 @@ TBDamageContext ctx = TBDamageContext.builder()
     .penetration(120f)                           // 理论穿深（mm RHA）
     .build();
 
-float dealt = TBDamageApi.hurt(target, ctx);
+float dealt = BFDamageApi.hurt(target, ctx);
 ```
 
-目标实现 `TBHurtTarget` 时自动走穿甲管线，否则以 `baseDamage` 直接调用原版 `hurt()`。
+目标实现 `BFHurtTarget` 时自动走穿甲管线，否则以 `baseDamage` 直接调用原版 `hurt()`。
 
 ### 武器模组——带回调的协议伤害
 
-需要接收命中结果（击穿/跳弹/破片等）时，实现 `TBDamageHandler` 接口，通过 `dealDamage()` 发起伤害：
+需要接收命中结果（击穿/跳弹/破片等）时，实现 `BFDamageHandler` 接口，通过 `dealDamage()` 发起伤害：
 
 ```java
-public class MyWeapon implements TBDamageHandler {
+public class MyWeapon implements BFDamageHandler {
 
     void fire(Entity target) {
-        TBDamageContext ctx = TBDamageContext.builder()
+        BFDamageContext ctx = BFDamageContext.builder()
             .source(src).baseDamage(35f).penetration(120f)
             .build();
         float dealt = this.dealDamage(target, ctx);  // 自动注入自身为 handler
@@ -72,27 +72,27 @@ public class MyWeapon implements TBDamageHandler {
     // 以下回调按需覆写，默认空操作
 
     @Override
-    public void onPenetrated(TBHurtTarget target, TBDamageContext ctx) {
+    public void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {
         spawnPenEffects(ctx.hitPoint());
     }
 
     @Override
-    public void onBlocked(TBHurtTarget target, TBDamageContext ctx) {
+    public void onBlocked(BFHurtTarget target, BFDamageContext ctx) {
         spawnSparkEffects(ctx.hitPoint());
     }
 
     @Override
-    public void onRicochet(TBHurtTarget target, TBDamageContext ctx) {
+    public void onRicochet(BFHurtTarget target, BFDamageContext ctx) {
         playRicochetSound(ctx.hitPoint());
     }
 
     @Override
-    public void onOvermatch(TBHurtTarget target, TBDamageContext ctx) {
+    public void onOvermatch(BFHurtTarget target, BFDamageContext ctx) {
         // 超匹配（碾压）——弹体完整穿透，不碎裂
     }
 
     @Override
-    public void onSpall(TBHurtTarget target, TBDamageContext ctx) {
+    public void onSpall(BFHurtTarget target, BFDamageContext ctx) {
         // 破片——弹体碎裂，产生二次杀伤
     }
 }
@@ -106,13 +106,13 @@ public class MyWeapon implements TBDamageHandler {
 
 覆写这两个方法可自定义判定逻辑。
 
-### 护甲模组——实现 TBHurtTarget
+### 护甲模组——实现 BFHurtTarget
 
 ```java
-public class MyTank extends LivingEntity implements TBHurtTarget {
+public class MyTank extends LivingEntity implements BFHurtTarget {
 
     @Override
-    public float getRHA(TBDamageContext ctx) {
+    public float getRHA(BFDamageContext ctx) {
         return 50f;  // 根据 ctx.hitPoint() 区分部位
     }
 
@@ -122,7 +122,7 @@ public class MyTank extends LivingEntity implements TBHurtTarget {
     }
 
     @Override @Nullable
-    public TBDamageContext createContextFromVanilla(DamageSource source, float amount) {
+    public BFDamageContext createContextFromVanilla(DamageSource source, float amount) {
         return null;  // 返回 null 退回原版流程
     }
 }
@@ -134,7 +134,7 @@ public class MyTank extends LivingEntity implements TBHurtTarget {
 
 ```java
 @Override
-public PenetrationResult resolvePenetration(TBDamageContext ctx) {
+public PenetrationResult resolvePenetration(BFDamageContext ctx) {
     Vec3 velocity = ctx.hitVelocity();
     Vec3 normal = ctx.hitNormal();
     float angle = (float) Math.toDegrees(Math.acos(
@@ -150,7 +150,7 @@ public PenetrationResult resolvePenetration(TBDamageContext ctx) {
 
 ```java
 @Override
-public float calculateFinalDamage(TBDamageContext ctx, PenetrationResult result) {
+public float calculateFinalDamage(BFDamageContext ctx, PenetrationResult result) {
     return switch (result) {
         case RICOCHET -> ctx.baseDamage() * 0.1f;   // 跳弹仍有 10% 冲击伤害
         case BLOCKED -> ctx.baseDamage() * 0.05f;   // 未击穿 5% 钝伤
@@ -165,7 +165,7 @@ public float calculateFinalDamage(TBDamageContext ctx, PenetrationResult result)
 
 ### 可覆写管线方法
 
-`TBHurtTarget` 的默认实现基于离散的 `ArmorLevel` 等级体系，精密模组可逐步覆写以下方法回到精确数值模型：
+`BFHurtTarget` 的默认实现基于离散的 `ArmorLevel` 等级体系，精密模组可逐步覆写以下方法回到精确数值模型：
 
 | 方法                                  | 默认行为                     | 精密模组覆写为                     |
 | ----------------------------------- | ------------------------ | --------------------------- |
@@ -180,8 +180,8 @@ public float calculateFinalDamage(TBDamageContext ctx, PenetrationResult result)
 
 ```java
 @Override
-public float getRHA(TBDamageContext ctx) {
-    TBDamageHandler h = ctx.getHandler();
+public float getRHA(BFDamageContext ctx) {
+    BFDamageHandler h = ctx.getHandler();
     if (h instanceof ChemicalWeapon) return eraEffectiveRha;  // 爆反生效
     return baseRha;
 }
@@ -192,7 +192,7 @@ public float getRHA(TBDamageContext ctx) {
 ```java
 @Override
 public boolean hurt(DamageSource source, float amount) {
-    TBDamageContext ctx = TBDamageApi.getContextFor(this);
+    BFDamageContext ctx = BFDamageApi.getContextFor(this);
     if (ctx != null) playHitSound(ctx.hitPoint());
     return super.hurt(source, amount);
 }
@@ -208,18 +208,18 @@ public boolean hurt(DamageSource source, float amount) {
 
 ```java
 // 设置口径和质量
-ctx.extensions().set(TBDamageExtensions.CALIBER, 0.12f);   // 120mm
-ctx.extensions().set(TBDamageExtensions.MASS, 22f);         // 22kg APFSDS
+ctx.extensions().set(BFDamageExtensions.CALIBER, 0.12f);   // 120mm
+ctx.extensions().set(BFDamageExtensions.MASS, 22f);         // 22kg APFSDS
 
 // 其他模组读取
-float caliber = ctx.extensions().get(TBDamageExtensions.CALIBER);
+float caliber = ctx.extensions().get(BFDamageExtensions.CALIBER);
 ```
 
 注册自定义扩展 key：
 
 ```java
-public static final TBDamageExtensionKey<HitBox> HIT_BOX =
-    TBDamageExtensions.register(
+public static final BFDamageExtensionKey<HitBox> HIT_BOX =
+    BFDamageExtensions.register(
         ResourceLocation.fromNamespaceAndPath("my_mod", "hit_box"),
         HitBox.class, () -> null);
 ```
@@ -239,9 +239,9 @@ public static final TBDamageExtensionKey<HitBox> HIT_BOX =
 ## 架构概要
 
 ```
-TBDamageApi.hurt(target, ctx)          ← 武器模组入口
+BFDamageApi.hurt(target, ctx)          ← 武器模组入口
     │
-    ├── target instanceof TBHurtTarget
+    ├── target instanceof BFHurtTarget
     │     ├── target.getRHA(ctx)               ← 护甲厚度
     │     ├── target.modifyPenetration(ctx)     ← 减效修正
     │     ├── target.resolvePenetration(ctx)    ← PENETRATED/BLOCKED/RICOCHET

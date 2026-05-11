@@ -1,15 +1,15 @@
-package io.github.sweetzonzi.terminal_ballistics.api;
+package io.github.sweetzonzi.ballistics_framework.api;
 
 /**
  * 穿甲判定的一次性结果。
  * <p>
  * PENETRATED / BLOCKED / RICOCHET 三者互斥，是命中的主结果。
- * 由 {@link TBHurtTarget#resolvePenetration(TBDamageContext)} 返回，
+ * 由 {@link BFHurtTarget#resolvePenetration(BFDamageContext)} 返回，
  * 作为 {@code calculateFinalDamage} 的入参和回调触发的唯一依据。
  * <p>
  * 超匹配(碾压)与破片不在此枚举中表达——它们由
- * {@link TBDamageHandler#isOvermatch(TBHurtTarget, TBDamageContext, PenetrationResult)}
- * 和 {@link TBDamageHandler#isSpall(TBHurtTarget, TBDamageContext, PenetrationResult)}
+ * {@link BFDamageHandler#isOvermatch(BFHurtTarget, BFDamageContext, PenetrationResult)}
+ * 和 {@link BFDamageHandler#isSpall(BFHurtTarget, BFDamageContext, PenetrationResult)}
  * 在回调阶段动态判定。
  */
 public enum PenetrationResult {

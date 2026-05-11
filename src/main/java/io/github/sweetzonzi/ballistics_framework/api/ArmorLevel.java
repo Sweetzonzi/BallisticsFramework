@@ -1,4 +1,4 @@
-package io.github.sweetzonzi.terminal_ballistics.api;
+package io.github.sweetzonzi.ballistics_framework.api;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -11,7 +11,7 @@ import java.util.Objects;
  * 将连续 RHA 值映射为离散等级，提供双向映射工具和等级间判定。
  * 等级按防护强度升序排列，{@link #canDefeat} 使用 {@code >=} 比较（等于算击穿）。
  * <p>
- * 本枚举不改变 {@link TBHurtTarget} 的现有契约——{@link #getRHA} 仍返回精确 float，
+ * 本枚举不改变 {@link BFHurtTarget} 的现有契约——{@link #getRHA} 仍返回精确 float，
  * 本枚举仅作为可选的语义辅助层。
  * <p>
  * 等级划分参考 Helldivers 2 的离散护甲理念，大约 ×2 非线性增长，
@@ -72,8 +72,8 @@ public enum ArmorLevel {
         // 第一个等级下限为 0，其余为上一级上限
         this.lowerRha = ordinal() == 0 ? 0f : values()[ordinal() - 1].upperRha;
         String name = name().toLowerCase();
-        this.armorDisplayName = ResourceLocation.fromNamespaceAndPath("terminal_ballistics", "armor_level/" + name + "/armor");
-        this.penetrationDisplayName = ResourceLocation.fromNamespaceAndPath("terminal_ballistics", "armor_level/" + name + "/penetration");
+        this.armorDisplayName = ResourceLocation.fromNamespaceAndPath("ballistics_framework", "armor_level/" + name + "/armor");
+        this.penetrationDisplayName = ResourceLocation.fromNamespaceAndPath("ballistics_framework", "armor_level/" + name + "/penetration");
     }
 
     // ======================== 等级映射 ========================
@@ -84,7 +84,7 @@ public enum ArmorLevel {
      * 取第一个 {@code upperRha >= rha} 的等级，即向上映射。
      * 元等级 {@link #UNPENETRABLE} 不会被此方法返回——它只能通过显式引用获取。
      *
-     * @param rha RHA 等效厚度（mm），单位与 {@link TBDamageContext#penetration} 一致
+     * @param rha RHA 等效厚度（mm），单位与 {@link BFDamageContext#penetration} 一致
      * @return 对应的护甲/穿甲等级。大于 2000mm 的值映射到 {@link #SUPER_HEAVY_6}
      */
     public static ArmorLevel fromRha(float rha) {

@@ -1,10 +1,10 @@
-package io.github.sweetzonzi.terminal_ballistics.api;
+package io.github.sweetzonzi.ballistics_framework.api;
 
 /**
  * 协议伤害发起方的处理接口。
  * <p>
- * 由武器/弹头模组实现，在构造 {@link TBDamageContext} 时通过
- * {@code builder.handler(myHandler)} 或 {@link TBDamageContext#withHandler(TBDamageHandler)} 注入。
+ * 由武器/弹头模组实现，在构造 {@link BFDamageContext} 时通过
+ * {@code builder.handler(myHandler)} 或 {@link BFDamageContext#withHandler(BFDamageHandler)} 注入。
  * <p>
  * 职责：
  * <ul>
@@ -20,20 +20,20 @@ package io.github.sweetzonzi.terminal_ballistics.api;
  * 由 {@link PenetrationResult} 决定；{@link #onOvermatch} 和 {@link #onSpall}
  * 仅由对应的 {@link #isOvermatch} / {@link #isSpall} 返回值决定。
  * <p>
- * 回调在 {@link TBDamageApi#hurt} 的管线末尾、伤害执行之后、上下文栈出栈之前触发。
+ * 回调在 {@link BFDamageApi#hurt} 的管线末尾、伤害执行之后、上下文栈出栈之前触发。
  */
-public interface TBDamageHandler {
+public interface BFDamageHandler {
 
     // ==================== 事件回调 ====================
 
     /** 击穿回调。伤害已执行后触发 */
-    default void onPenetrated(TBHurtTarget target, TBDamageContext ctx) {}
+    default void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {}
 
     /** 未击穿回调（含钝伤等）。伤害已执行后触发 */
-    default void onBlocked(TBHurtTarget target, TBDamageContext ctx) {}
+    default void onBlocked(BFHurtTarget target, BFDamageContext ctx) {}
 
     /** 跳弹回调。伤害已执行后触发 */
-    default void onRicochet(TBHurtTarget target, TBDamageContext ctx) {}
+    default void onRicochet(BFHurtTarget target, BFDamageContext ctx) {}
 
     /**
      * 超匹配(碾压)回调。
@@ -41,7 +41,7 @@ public interface TBDamageHandler {
      * 仅在 {@link #isOvermatch} 返回 true 时触发。
      * 穿深远超装甲厚度——弹体"碾压"装甲，不发生碎裂。
      */
-    default void onOvermatch(TBHurtTarget target, TBDamageContext ctx) {}
+    default void onOvermatch(BFHurtTarget target, BFDamageContext ctx) {}
 
     /**
      * 破片回调。
@@ -49,7 +49,7 @@ public interface TBDamageHandler {
      * 仅在 {@link #isSpall} 返回 true 时触发。
      * 默认未击穿或击穿但非超匹配(碾压)时，弹体碎裂产生破片。
      */
-    default void onSpall(TBHurtTarget target, TBDamageContext ctx) {}
+    default void onSpall(BFHurtTarget target, BFDamageContext ctx) {}
 
     // ==================== 判定方法（默认实现，可覆写） ====================
 
@@ -65,7 +65,7 @@ public interface TBDamageHandler {
      * @param result 穿甲判定结果
      * @return true 表示超匹配(碾压)——弹体碾压装甲，不发生碎裂
      */
-    default boolean isOvermatch(TBHurtTarget target, TBDamageContext ctx, PenetrationResult result) {
+    default boolean isOvermatch(BFHurtTarget target, BFDamageContext ctx, PenetrationResult result) {
         if (result != PenetrationResult.PENETRATED) return false;
         float rha = target.getRHA(ctx);
         float modifiedPen = target.modifyPenetration(ctx);
@@ -90,7 +90,7 @@ public interface TBDamageHandler {
      * @param result 穿甲判定结果
      * @return true 表示产生破片
      */
-    default boolean isSpall(TBHurtTarget target, TBDamageContext ctx, PenetrationResult result) {
+    default boolean isSpall(BFHurtTarget target, BFDamageContext ctx, PenetrationResult result) {
         if (result == PenetrationResult.RICOCHET) return false;
         if (result == PenetrationResult.BLOCKED) return true;
         return !isOvermatch(target, ctx, result);
@@ -101,14 +101,14 @@ public interface TBDamageHandler {
     /**
      * 发起一次协议伤害，并将自身作为 handler 注入上下文以便接收回调。
      * <p>
-     * 等价于 {@code TBDamageApi.hurt(target, ctx.withHandler(this))}。
+     * 等价于 {@code BFDamageApi.hurt(target, ctx.withHandler(this))}。
      * 调用方无需知道 {@code withHandler} 的存在。
      *
-     * @param target 伤害目标（{@link TBHurtTarget} 或普通 {@link net.minecraft.world.entity.Entity}）
+     * @param target 伤害目标（{@link BFHurtTarget} 或普通 {@link net.minecraft.world.entity.Entity}）
      * @param ctx    命中上下文（handler 字段可留空，本方法自动注入）
      * @return 实际造成的伤害量
      */
-    default float dealDamage(Object target, TBDamageContext ctx) {
-        return TBDamageApi.hurt(target, ctx.withHandler(this));
+    default float dealDamage(Object target, BFDamageContext ctx) {
+        return BFDamageApi.hurt(target, ctx.withHandler(this));
     }
 }

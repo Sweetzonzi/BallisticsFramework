@@ -1,5 +1,6 @@
-package io.github.sweetzonzi.terminal_ballistics.api;
+package io.github.sweetzonzi.ballistics_framework.api;
 
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.damagesource.DamageSource;
 import org.jetbrains.annotations.Nullable;
 
@@ -11,13 +12,13 @@ import org.jetbrains.annotations.Nullable;
  * 需要精确数值判定的模组应同时覆写 {@link #getRHA}、{@link #modifyPenetration}、
  * {@link #isArmorPenetrated}、{@link #resolvePenetration}、{@link #calculateFinalDamage}。
  * <p>
- * 穿深的角度效应等应由弹头/武器模组在构造 {@link TBDamageContext} 前计算，
+ * 穿深的角度效应等应由弹头/武器模组在构造 {@link BFDamageContext} 前计算，
  * <p>
  * 协议层调用顺序：
  * {@link #getRHA} → {@link #modifyPenetration} → {@link #resolvePenetration}
  * → {@link #calculateFinalDamage} → {@link #hurt}
  */
-public interface TBHurtTarget {
+public interface BFHurtTarget {
 
     /**
      * 返回此命中部位对应的离散护甲等级。
@@ -27,7 +28,7 @@ public interface TBHurtTarget {
      * @param ctx 命中上下文
      * @return 此命中部位对应的护甲等级
      */
-    ArmorLevel getArmorLevel(TBDamageContext ctx);
+    ArmorLevel getArmorLevel(BFDamageContext ctx);
 
     /**
      * 返回命中部位的垂直 RHA 等效厚度（mm）。
@@ -48,34 +49,37 @@ public interface TBHurtTarget {
      * @param ctx 命中上下文
      * @return RHA 等效厚度（mm）。0 表示无装甲；{@code Float.MAX_VALUE} 表示绝对不可穿透
      */
-    default float getRHA(TBDamageContext ctx) {
+    default float getRHA(BFDamageContext ctx) {
         return getArmorLevel(ctx).medianRha();
     }
 
     /**
      * 修正穿深，默认直接返回原始值。
      * <p>
-     * 穿深的角度效应等应由弹头/武器模组在构造 {@link TBDamageContext} 前计算。
+     * 穿深的角度效应等应由弹头/武器模组在构造 {@link BFDamageContext} 前计算。
      * 此方法作为 hook 保留，供护甲模组实现爆反拦截、间隙衰减等减效逻辑。
      *
      * @param ctx 命中上下文
      * @return 修正后的有效穿深。默认直接返回 {@code ctx.penetration()}
      */
-    default float modifyPenetration(TBDamageContext ctx) {
+    default float modifyPenetration(BFDamageContext ctx) {
         return ctx.penetration();
     }
 
     /**
      * 判断是否能够击穿装甲（纯击穿判定，不含跳弹）。
      * <p>
-     * 默认基于离散等级比较（等于算击穿）。精密模组应覆写为精确 float 比较。
-     * 此方法不再被管线直接调用，而是作为 {@link #resolvePenetration} 的默认委托。
+     * 默认基于离散等级比较：先调用 {@link #modifyPenetration} 获取修正后的有效穿深，
+     * 再映射到穿甲等级并与目标护甲等级比较（等于算击穿）。
+     * 精密模组应覆写为精确 float 比较。
+     * 此方法作为 {@link #resolvePenetration} 的默认委托。
      *
      * @param ctx 命中上下文
      * @return true 表示穿深足以击穿装甲
      */
-    default boolean isArmorPenetrated(TBDamageContext ctx) {
-        return ctx.getPenetrationLevel().canDefeat(getArmorLevel(ctx));
+    default boolean isArmorPenetrated(BFDamageContext ctx) {
+        float effectivePen = modifyPenetration(ctx);
+        return ArmorLevel.fromRha(effectivePen).canDefeat(getArmorLevel(ctx));
     }
 
     /**
@@ -85,13 +89,13 @@ public interface TBHurtTarget {
      * 需要跳弹判定的护甲模组应覆写此方法——
      * 在入射角过大时返回 RICOCHET。
      * <p>
-     * 此方法由 TBDamageApi 在管线中单次调用，其返回值作为
+     * 此方法由 BFDamageApi 在管线中单次调用，其返回值作为
      * calculateFinalDamage 的入参和回调触发的唯一依据。
      *
      * @param ctx 命中上下文
      * @return 穿甲结果（PENETRATED / BLOCKED / RICOCHET，三者互斥）
      */
-    default PenetrationResult resolvePenetration(TBDamageContext ctx) {
+    default PenetrationResult resolvePenetration(BFDamageContext ctx) {
         return isArmorPenetrated(ctx) ? PenetrationResult.PENETRATED : PenetrationResult.BLOCKED;
     }
 
@@ -112,7 +116,7 @@ public interface TBHurtTarget {
      * @param result 由 {@link #resolvePenetration} 返回的穿甲结果
      * @return 最终伤害量
      */
-    default float calculateFinalDamage(TBDamageContext ctx, PenetrationResult result) {
+    default float calculateFinalDamage(BFDamageContext ctx, PenetrationResult result) {
         if (result != PenetrationResult.PENETRATED) return 0f;
         if (ctx.getPenetrationLevel() == getArmorLevel(ctx)) return ctx.baseDamage() * 0.65f;
         return ctx.baseDamage();
@@ -130,6 +134,25 @@ public interface TBHurtTarget {
     boolean hurt(DamageSource source, float amount);
 
     /**
+     * 获取此协议伤害目标对应的实体引用。
+     * <p>
+     * 必须优先返回非 null 的实体引用以配合上下文栈 target 选取规则——
+     * 若实现者委托实体 {@code entity.hurt()} 却返回 null，会导致 mixin 重入守卫失效。
+     * <p>
+     * 默认实现：若自身是 Entity 子类则返回 {@code this}，否则返回 null。
+     * 适配器（如 {@code BFArmorAdapter}）应覆写此方法返回被包裹的实体。
+     * <p>
+     * 供 {@link BFDamageHandler} 回调中使用——武器模组可通过
+     * {@code target.getBFEntity()} 安全地获取被命中的实体以播放音效、粒子或触发额外逻辑。
+     *
+     * @return 目标对应的实体；不应为 null，但允许非 Entity 实现返回 null
+     */
+    @Nullable
+    default Entity getBFEntity() {
+        return this instanceof Entity e ? e : null;
+    }
+
+    /**
      * 将原版伤害转换为协议上下文。
      * <p>
      * 当 mixin 拦截到非协议来源的伤害命中此目标时调用。
@@ -140,5 +163,5 @@ public interface TBHurtTarget {
      * @return 协议上下文，或 null 退回原版
      */
     @Nullable
-    TBDamageContext createContextFromVanilla(DamageSource source, float amount);
+    BFDamageContext createContextFromVanilla(DamageSource source, float amount);
 }

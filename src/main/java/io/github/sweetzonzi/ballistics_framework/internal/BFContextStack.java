@@ -1,6 +1,8 @@
-package io.github.sweetzonzi.terminal_ballistics.internal;
+package io.github.sweetzonzi.ballistics_framework.internal;
 
-import io.github.sweetzonzi.terminal_ballistics.api.TBDamageContext;
+import io.github.sweetzonzi.ballistics_framework.BallisticsFramework;
+import io.github.sweetzonzi.ballistics_framework.api.BFDamageApi;
+import io.github.sweetzonzi.ballistics_framework.api.BFDamageContext;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayDeque;
@@ -13,17 +15,17 @@ import java.util.Deque;
  * 栈元素为 {@code (target, context)} 对，用于精确判断"当前上下文的所属实体"，
  * 从而区分同一调用链内的重入（同一目标）与副作用产生的新伤害（不同目标，如荆棘反伤）。
  * <p>
- * 仅被 {@code TBDamageApi} 和 mixin 类调用，不暴露给外部 mod。
+ * 仅被 {@code BFDamageApi} 和 mixin 类调用，不暴露给外部 mod。
  */
-public final class TBContextStack {
+public final class BFContextStack {
 
-    public static final TBContextStack INSTANCE = new TBContextStack();
+    public static final BFContextStack INSTANCE = new BFContextStack();
 
     private final ThreadLocal<Deque<Entry>> stack = ThreadLocal.withInitial(ArrayDeque::new);
 
-    private TBContextStack() {}
+    private BFContextStack() {}
 
-    private record Entry(Object target, TBDamageContext ctx) {}
+    private record Entry(Object target, BFDamageContext ctx) {}
 
     /**
      * 压栈。
@@ -31,17 +33,28 @@ public final class TBContextStack {
      * @param target 当前伤害的目标实体
      * @param ctx    当前伤害的上下文
      */
-    public void push(Object target, TBDamageContext ctx) {
+    public void push(Object target, BFDamageContext ctx) {
         stack.get().push(new Entry(target, ctx));
     }
 
     /**
      * 出栈。
-     *
-     * @throws java.util.NoSuchElementException 如果栈为空（表示调用链不匹配的 bug）
+     * <p>
+     * 正常情况下栈不应为空——push/pop 由 {@link BFDamageApi#hurt}
+     * 的 try/finally 保证成对出现。若栈为空说明调用链出现不匹配的 bug（例如在协议管线外误调 pop，
+     * 或 push 后由于异常未正确执行 finally 块导致栈帧泄漏但后续某次 pop 意外匹配），
+     * 此时记录错误日志以便调试定位。
      */
     public void pop() {
-        stack.get().pop();
+        Deque<Entry> deque = stack.get();
+        if (deque.isEmpty()) {
+            BallisticsFramework.LOGGER.error(
+                    "BFContextStack.pop() 调用时栈已为空，表明存在 push/pop 不匹配的 bug。"
+                            + " 请检查 BFDamageApi.hurt() 的 try/finally 是否正确配对，"
+                            + " 或是否有代码在协议管线外误调了 pop()。");
+            return;
+        }
+        deque.pop();
     }
 
     /**
@@ -64,14 +77,14 @@ public final class TBContextStack {
      * 遍历栈时只匹配栈顶元素（即当前嵌套层级最深的那一层协议调用），
      * 这是因为同一线程中可能因协议管线嵌套产生多层栈帧，而每一层的
      * target 不同——栈顶始终代表"最内层"正在执行的协议伤害。
-     * push/pop 由 {@link io.github.sweetzonzi.terminal_ballistics.api.TBDamageApi#hurt}
+     * push/pop 由 {@link BFDamageApi#hurt}
      * 的 try/finally 保证成对出现，因此不存在栈帧错位。
      *
      * @param target 要获取上下文的目标（使用 {@code ==} 引用比较）
      * @return 栈顶上下文，栈为空或栈顶 target 不匹配时返回 null
      */
     @Nullable
-    public TBDamageContext getContextFor(Object target) {
+    public BFDamageContext getContextFor(Object target) {
         Deque<Entry> deque = stack.get();
         if (deque.isEmpty()) return null;
         Entry top = deque.peek();
