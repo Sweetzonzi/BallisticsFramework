@@ -4,6 +4,7 @@
 ![NeoForge](https://img.shields.io/badge/NeoForge-21.1.219-blue)
 ![Java](https://img.shields.io/badge/Java-21-orange)
 ![License](https://img.shields.io/badge/License-LGPL%203.0-blue)
+[![Wiki](https://img.shields.io/badge/Wiki-GitHub%20Pages-blue?logo=github)](https://sweetzonzi.github.io/BallisticsFramework/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Sweetzonzi/BallisticsFramework)
 
 [中文版](README.md)
