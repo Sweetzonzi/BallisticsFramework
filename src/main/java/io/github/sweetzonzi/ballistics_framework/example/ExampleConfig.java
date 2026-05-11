@@ -32,12 +32,14 @@ public final class ExampleConfig {
 
     /**
      * 检查是否应注册示例内容。
-     * 双重检查：仅在开发环境且 config 开启时才可注册。
+     * <p>
+     * 仅在开发环境（非生产）下启用。config 在注册时序上可能尚未加载，
+     * 因此仅依据 {@link FMLLoader#isProduction()} 判断，不依赖 config 值。
      *
      * @return true 表示当前环境允许注册示例内容
      */
     public static boolean shouldEnable() {
-        return !PRODUCTION && ENABLE_EXAMPLE_CONTENT.get();
+        return !PRODUCTION;
     }
 
     /**

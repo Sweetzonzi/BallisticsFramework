@@ -109,9 +109,8 @@ public final class ExampleContent {
      */
     public static void init(IEventBus modEventBus) {
         boolean shouldEnable = ExampleConfig.shouldEnable();
-        LOGGER.info("[BF-Example] 示例内容注册 = {} (开发环境 = {}, 生产环境 = {}, config = {})",
-                shouldEnable, !ExampleConfig.isProduction(), ExampleConfig.isProduction(),
-                ExampleConfig.ENABLE_EXAMPLE_CONTENT.get());
+        LOGGER.info("[BF-Example] 示例内容注册 = {} (开发环境 = {}, 生产环境 = {})",
+                shouldEnable, !ExampleConfig.isProduction(), ExampleConfig.isProduction());
 
         if (!shouldEnable) return;
 

@@ -26,10 +26,9 @@ public class BallisticsFramework {
     public BallisticsFramework(IEventBus modEventBus, ModContainer modContainer) {
         // 注册 config（无论开关状态，config 始终存在）
         ExampleConfig.register(modContainer);
-        LOGGER.info("[BF-Example] Config 已注册。shouldEnable={} (生产环境={}, config={})",
+        LOGGER.info("[BF-Example] Config 已注册。shouldEnable={} (生产环境={})",
                 ExampleConfig.shouldEnable(),
-                ExampleConfig.isProduction(),
-                ExampleConfig.ENABLE_EXAMPLE_CONTENT.get());
+                ExampleConfig.isProduction());
 
         // 初始化类型安全扩展容器（必须在任何 API 调用前执行）
         BFDamageExtensions.init();
