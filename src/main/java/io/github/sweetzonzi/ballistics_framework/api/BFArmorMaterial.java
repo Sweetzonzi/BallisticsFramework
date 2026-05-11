@@ -1,5 +1,6 @@
 package io.github.sweetzonzi.ballistics_framework.api;
 
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
@@ -13,6 +14,10 @@ import org.jetbrains.annotations.Nullable;
  * <p>
  * 简易模式下只需实现 {@link #getArmorLevel}，其余方法均有默认实现。
  * 精密模式下可覆写全部管线方法，实现爆反拦截、间隙衰减、跳弹判定等高级逻辑。
+ * <p>
+ * 默认会拦截所有原版伤害并转换为协议伤害。如果你想让某些伤害类型绕过护甲
+ * （如魔法伤害不被钢板阻挡），覆写 {@link #createContextFromVanilla}
+ * 对特定 {@code DamageSource} 返回 {@code null} 即可。
  * <p>
  * 管线委托链：适配器 {@code BFArmorAdapter} 逐方法委托到此接口的对应方法，
  * 确保护甲模组拥有与 {@link BFHurtTarget} 实现者同等的定制权限。
@@ -159,5 +164,32 @@ public interface BFArmorMaterial {
         if (heightFrac > 0.55) return EquipmentSlot.CHEST;
         if (heightFrac > 0.35) return EquipmentSlot.LEGS;
         return EquipmentSlot.FEET;
+    }
+
+    // ======================== 协议外伤害兼容（可选覆写） ========================
+
+    /**
+     * 将原版伤害转换为协议上下文，供 Mixin 拦截使用。
+     * <p>
+     * 默认始终返回有效上下文（穿深 = 原版伤害量 / 2），意味着所有原版伤害
+     * 都会被拦截并进入穿甲管线。如果需要让某些伤害类型绕过护甲——
+     * 例如魔法伤害（药水）、虚空、溺水等不应被钢板阻挡的伤害——
+     * 覆写此方法，对特定 {@code source} 返回 {@code null}。
+     * <p>
+     * 适配器遍历所有护甲槽位，调用每件护甲物品的此方法。
+     * <b>任一</b>护甲物品返回非 null 时整次伤害被接管；
+     * <b>所有</b>护甲物品均返回 null 时才退回原版流程。
+     *
+     * @param source 原版 {@link net.minecraft.world.damagesource.DamageSource}
+     * @param amount 原版伤害量
+     * @return 协议上下文；返回 null 表示此伤害类型不纳入穿甲管线，走原版流程
+     */
+    @Nullable
+    default BFDamageContext createContextFromVanilla(DamageSource source, float amount) {
+        return BFDamageContext.builder()
+                .source(source)
+                .baseDamage(amount)
+                .penetration(amount / 2f)
+                .build();
     }
 }

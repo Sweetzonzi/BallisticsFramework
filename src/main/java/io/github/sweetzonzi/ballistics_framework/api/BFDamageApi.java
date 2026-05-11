@@ -50,6 +50,38 @@ public final class BFDamageApi {
         }
         BFContextStack.INSTANCE.push(stackTarget, ctx);
         try {
+            // ================================================================
+            // 分支0：复合目标 — BFHurtTarget + BFArmorMaterial 护甲
+            //   护甲层先拦截 → childCtx → 本体层始终执行完整管线
+            // ================================================================
+            if (target instanceof LivingEntity living
+                    && target instanceof BFHurtTarget bfTarget
+                    && BFArmorAdapter.hasBFArmor(living)) {
+
+                // 第一层：护甲管线
+                BFArmorAdapter adapter = new BFArmorAdapter(living);
+                float residualPen = adapter.modifyPenetration(ctx);
+                PenetrationResult armorResult = adapter.resolvePenetration(ctx);
+                float residualDmg = adapter.calculateFinalDamage(ctx, armorResult);
+
+                // 构造子上下文——未击穿/跳弹时穿深传 0 表示仅钝伤
+                float childPen = armorResult == PenetrationResult.PENETRATED
+                        ? residualPen : 0f;
+                BFDamageContext childCtx = ctx.childContext(residualDmg, childPen);
+
+                // 第二层：本体始终执行完整管线
+                PenetrationResult entityResult = bfTarget.resolvePenetration(childCtx);
+                float finalDmg = bfTarget.calculateFinalDamage(childCtx, entityResult);
+                boolean success = bfTarget.hurt(ctx.source(), finalDmg);
+                float dealt = success ? finalDmg : 0f;
+
+                // 回调在本体层的最终结果上触发
+                if (handler != null) {
+                    triggerCallbacks(handler, bfTarget, childCtx, entityResult);
+                }
+                return dealt;
+            }
+
             // 分支1：BFHurtTarget（实体或独立对象直接声明协议感知）
             if (target instanceof BFHurtTarget bfTarget) {
                 PenetrationResult result = bfTarget.resolvePenetration(ctx);

@@ -77,6 +77,29 @@ public record BFDamageContext(
     }
 
     /**
+     * 构造子上下文，用于双层串联管线中护甲层向本体层传递修正后的弹头状态。
+     * <p>
+     * 仅替换 baseDamage 和 penetration，其余字段（source、hitVelocity、hitPoint、hitNormal、
+     * extensions、handler）与原上下文相同。
+     * <p>
+     * 典型用法：护甲适配器完成 {@code modifyPenetration}（爆反拦截后残余穿深）、
+     * {@code resolvePenetration}（跳弹判定）、{@code calculateFinalDamage}（穿过护甲后的残余伤害量）
+     * 后，调用此方法构造子上下文传入本体层。
+     * <p>
+     * 击穿时：{@code ctx.childContext(residualDmg, residualPen)}，本体基于残余穿深做二次判定。
+     * 未击穿/跳弹时：{@code ctx.childContext(residualDmg, 0f)}，穿深传 0 表示仅钝伤，
+     * 本体始终执行完整管线自主决定钝伤值。
+     *
+     * @param newBaseDamage  护甲层 {@code calculateFinalDamage} 输出的残余伤害量
+     * @param newPenetration 护甲层穿透后的残余穿深（mm RHA）；未击穿/跳弹时传 0 表示仅钝伤
+     * @return 新上下文实例
+     */
+    public BFDamageContext childContext(float newBaseDamage, float newPenetration) {
+        return new BFDamageContext(source, newBaseDamage, hitVelocity,
+                hitPoint, hitNormal, newPenetration, extensions, handler);
+    }
+
+    /**
      * 获取此上下文的穿深所对应的穿甲等级。
      * <p>
      * 等同于 {@code ArmorLevel.fromRha(this.penetration)}。
