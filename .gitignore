@@ -7,3 +7,6 @@
 /.idea/
 /.eclipse/
 /bin/
+
+# MkDocs 构建输出
+/docs/site/
