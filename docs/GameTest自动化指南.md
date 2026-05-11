@@ -263,14 +263,17 @@ gradlew runGameTestServer
 
 ### 4.1 测试场景总览
 
-BallisticsFramework 实现了 6 个 GameTest 场景，覆盖 `example-包实现计划.md` 中定义的管线验证矩阵。
+BallisticsFramework 实现了 8 个 GameTest 场景，覆盖 `example-包实现计划.md` 中定义的管线验证矩阵，
+并补充了同级击穿、低级阻挡、越级击穿三种穿甲判定关系的独立测试。
 
 | 测试方法 | 场景 | 攻击参数 | 目标 | 预期伤害 | 对应管线分支 |
 |---------|------|---------|------|---------|------------|
 | `testMeleeAgainstUnarmoredTarget` | 近战武器裸打靶子 | 60mm / 15HP | 裸体靶子 (0mm) | 15.0 | **分支1**：BFHurtTarget 直接管线 |
-| `testMeleeAgainstArmoredTarget` | 近战武器打护甲靶子 | 60mm / 15HP | 穿护甲靶子 (40mm) | 9.75 | **分支0**：复合目标（BFHurtTarget + BFArmorAdapter） |
+| `testMeleeSameLevelPenetration` | 同级击穿 | 30mm / 15HP | 穿护甲靶子 (40mm) | 9.75 | **分支0**：同级 ×0.65 |
+| `testMeleeLowerLevelBlocked` | 低级打高级 | 15mm / 15HP | 穿护甲靶子 (40mm) | 0 | **分支0**：完全阻挡 |
+| `testMeleeOvermatchPenetration` | 越级击穿 | 60mm / 15HP | 穿护甲靶子 (40mm) | 15.0 | **分支0**：越级 ×1.0 |
 | `testProjectileAgainstArmoredTarget` | 投射物打护甲靶子 | 200mm / 25HP | 穿护甲靶子 (40mm) | 25.0 | **分支0** + 回调验证（PENETRATED + OVERMATCH） |
-| `testProjectileAgainstUnarmoredTarget` | 投射物打裸体靶子 | 200mm / 25HP | 裸体靶子 (0mm) | 25.0 | **分支1** + 回调验证（PENETRATED + OVERMATCH） |
+| `testProjectileAgainstUnarmoredTarget` | 投射物打裸体靶子 | 200mm / 25HP | 裸体靶子 (0mm) | 25.0 | **分支1** + 回调验证 |
 | `testHurtAgainstVanillaEntity` | 投射物打普通实体 | 200mm / 5HP | 僵尸（非协议） | > 0 | **分支3**：原版回退 |
 | `testVanillaDamageFallback` | 原版伤害走原版 | 原版 generic / 5HP | 靶子实体 | 扣血 | 不触发管线 |
 
@@ -303,15 +306,34 @@ BFDamageApi.hurt(Object target, BFDamageContext ctx)
 - **预期伤害**：15.0（穿深远超护甲，全伤穿透系数 1.0）
 - **断言语义**：验证 `BFDamageApi.hurt()` 对 BFHurtTarget 的裸打路径
 
-#### 场景2：`testMeleeAgainstArmoredTarget` — 近战武器打护甲靶子
+#### 场景2：`testMeleeSameLevelPenetration` — 同级击穿
 
-- **攻击方**：同上，穿深 60mm（HEAVY 等级），基础伤害 15 HP
-- **防御方**：`ExampleTargetEntity` + 穿戴示例护甲四件套（每件 40mm，HEAVY 等级）
-- **管线路径**：分支0 — 复合目标（实体是 BFHurtTarget + 穿戴 BFArmorMaterial 护甲）
-- **预期伤害**：9.75（同级击穿 60mm ≥ 40mm，伤害系数 0.65：15 × 0.65 = 9.75）
-- **断言语义**：验证双层防护模型在同级击穿下的伤害计算正确性
+- **攻击方**：模拟近战武器，穿深 30mm（`ArmorLevel.HEAVY`），基础伤害 15 HP
+- **防御方**：`ExampleTargetEntity` + 穿戴示例护甲四件套（每件 40mm，`ArmorLevel.HEAVY`）
+- **等级判定**：穿透等级 = 护甲等级（均为 HEAVY）→ 同级击穿
+- **管线路径**：分支0 — 复合目标，`canDefeat` 返回 true（ordinal 相等）
+- **预期伤害**：9.75（同级击穿伤害系数 0.65：15 × 0.65 = 9.75）
+- **断言语义**：验证 `calculateFinalDamage` 中对 `getPenetrationLevel() == getArmorLevel()` 的同级判定
 
-#### 场景3：`testProjectileAgainstArmoredTarget` — 投射物打护甲靶子
+#### 场景3：`testMeleeLowerLevelBlocked` — 低级打高级
+
+- **攻击方**：模拟近战武器，穿深 15mm（`ArmorLevel.MEDIUM`），基础伤害 15 HP
+- **防御方**：`ExampleTargetEntity` + 穿戴示例护甲四件套（40mm，`ArmorLevel.HEAVY`）
+- **等级判定**：穿透等级（MEDIUM）低于护甲等级（HEAVY）→ 未击穿
+- **管线路径**：分支0 — 复合目标，`canDefeat` 返回 false
+- **预期伤害**：0（BLOCKED，`calculateFinalDamage` 返回 0）
+- **断言语义**：验证低级穿深无法击穿高级护甲的完全阻挡行为
+
+#### 场景4：`testMeleeOvermatchPenetration` — 越级击穿
+
+- **攻击方**：模拟近战武器，穿深 60mm（`ArmorLevel.SUPER_HEAVY_1`），基础伤害 15 HP
+- **防御方**：`ExampleTargetEntity` + 穿戴示例护甲四件套（40mm，`ArmorLevel.HEAVY`）
+- **等级判定**：穿透等级（SUPER_HEAVY_1）高于护甲等级（HEAVY）→ 越级击穿
+- **管线路径**：分支0 — 复合目标，`canDefeat` 返回 true 且 ordinal 不等
+- **预期伤害**：15.0（越级击穿伤害系数 1.0：15 × 1.0 = 15.0）
+- **断言语义**：验证越级击穿时全伤穿透，与场景2的同级×0.65形成对比
+
+#### 场景5：`testProjectileAgainstArmoredTarget` — 投射物打护甲靶子
 
 - **攻击方**：模拟投射物，穿深 200mm（`ArmorLevel.SUPER_HEAVY_3`），基础伤害 25 HP
 - **防御方**：靶子 + 示例护甲四件套（40mm）
@@ -320,7 +342,7 @@ BFDamageApi.hurt(Object target, BFDamageContext ctx)
 - **回调验证**：`CallbackRecorder` 断言 PENETRATED 和 OVERMATCH 回调均被触发，BLOCKED 和 RICOCHET 未触发
 - **OVERMATCH 判定规则**：穿深 200 > 40 × 1.5 = 60，满足超匹配条件
 
-#### 场景4：`testProjectileAgainstUnarmoredTarget` — 投射物打裸体靶子
+#### 场景6：`testProjectileAgainstUnarmoredTarget` — 投射物打裸体靶子
 
 - **攻击方**：同上，穿深 200mm，伤害 25 HP
 - **防御方**：裸体靶子（0mm）
@@ -328,7 +350,7 @@ BFDamageApi.hurt(Object target, BFDamageContext ctx)
 - **预期伤害**：25.0（越级击穿，全伤）
 - **回调验证**：断言 PENETRATED + OVERMATCH 回调触发
 
-#### 场景5：`testHurtAgainstVanillaEntity` — 投射物打普通实体
+#### 场景7：`testHurtAgainstVanillaEntity` — 投射物打普通实体
 
 - **攻击方**：模拟投射物，穿深 200mm，伤害 5 HP
 - **防御方**：原版僵尸（非 `BFHurtTarget` 实现者）
@@ -336,7 +358,7 @@ BFDamageApi.hurt(Object target, BFDamageContext ctx)
 - **预期结果**：僵尸生命值减少（`getHealth()` 在伤害后小于伤害前）
 - **断言语义**：验证 BFDamageApi 对非协议实体不会崩溃，正确回退到原版 `Entity.hurt()`
 
-#### 场景6：`testVanillaDamageFallback` — 原版伤害走原版流程
+#### 场景8：`testVanillaDamageFallback` — 原版伤害走原版流程
 
 - **攻击方**：原版 `DamageSource.generic()`，伤害 5 HP
 - **防御方**：`ExampleTargetEntity`（`createContextFromVanilla()` 返回 null）
@@ -356,10 +378,10 @@ BFDamageApi.hurt(Object target, BFDamageContext ctx)
 [GameTest] Starting batch: defaultBatch
 [GameTest] Running test: ballistics_framework:testMeleeAgainstUnarmoredTarget
 [GameTest] ✓ ballistics_framework:testMeleeAgainstUnarmoredTarget
-[GameTest] Running test: ballistics_framework:testMeleeAgainstArmoredTarget
-[GameTest] ✓ ballistics_framework:testMeleeAgainstArmoredTarget
+[GameTest] Running test: ballistics_framework:testMeleeSameLevelPenetration
+[GameTest] ✓ ballistics_framework:testMeleeSameLevelPenetration
 ...
-[GameTest] All 6 tests passed
+[GameTest] All 8 tests passed
 ```
 
 退出码为 0，表示全部通过。
@@ -369,12 +391,12 @@ BFDamageApi.hurt(Object target, BFDamageContext ctx)
 测试失败时，输出包含以下信息：
 
 ```
-[GameTest] ✗ ballistics_framework:testMeleeAgainstArmoredTarget
-[GameTest]   Error: GameTestAssertException: 同级击穿应×0.65：预期 9.75，实际 15.0
-    at ...BallisticsGameTest.assertFloatEquals(BallisticsGameTest.java:240)
-    at ...BallisticsGameTest.testMeleeAgainstArmoredTarget(BallisticsGameTest.java:91)
+[GameTest] ✗ ballistics_framework:testMeleeSameLevelPenetration
+[GameTest]   Error: GameTestAssertException: 同级击穿应×0.65：预期 9.75，实际 0
+    at ...BallisticsGameTest.assertFloatEquals(BallisticsGameTest.java:...)
+    at ...BallisticsGameTest.testMeleeSameLevelPenetration(BallisticsGameTest.java:...)
     ...
-[GameTest] Summary: 5 passed, 1 failed
+[GameTest] Summary: 7 passed, 1 failed
 ```
 
 退出码为非零值，CI 系统可据此判断失败。

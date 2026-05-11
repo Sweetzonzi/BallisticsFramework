@@ -13,6 +13,7 @@ import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ArmorMaterials;
 import net.minecraft.world.item.Item;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -117,8 +118,20 @@ public final class ExampleContent {
         ITEMS.register(modEventBus);
         ENTITIES.register(modEventBus);
         ExampleCreativeTab.register(modEventBus);
+        modEventBus.addListener(ExampleContent::onEntityAttributeCreation);
 
         LOGGER.info("[BF-Example] 已注册 {} 个物品", ITEMS.getEntries().size());
         LOGGER.info("[BF-Example] 已注册 {} 个实体", ENTITIES.getEntries().size());
+    }
+
+    /**
+     * 注册示例实体的属性（血量、移速等）。
+     * <p>
+     * 通过 {@link EntityAttributeCreationEvent} 在实体注册时关联属性表，
+     * GameTestServer 环境下此步骤必须显式执行，否则实体生成时 AttributeSupplier 为 null。
+     */
+    private static void onEntityAttributeCreation(EntityAttributeCreationEvent event) {
+        event.put(EXAMPLE_TARGET_ENTITY.get(),
+                ExampleTargetEntity.createAttributes().build());
     }
 }
