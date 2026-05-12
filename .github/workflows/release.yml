@@ -169,6 +169,7 @@ jobs:
             ---
             📖 [Wiki 文档](https://sweetzonzi.github.io/BallisticsFramework/)
           files: ${{ steps.jar.outputs.path }}
+          prerelease: true
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
