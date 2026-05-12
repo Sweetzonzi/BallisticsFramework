@@ -51,9 +51,14 @@ jobs:
             core.setOutput('mod_id', props.mod_id);
             core.setOutput('minecraft_version', props.minecraft_version);
             core.setOutput('mod_name', props.mod_name);
+            // 检测是否为 Forge 版（存在 forge_version 属性则使用 JDK 17）
+            const isForge = !!props.forge_version;
+            core.setOutput('is_forge', isForge ? 'true' : 'false');
+            core.setOutput('java_version', isForge ? '17' : '21');
 
       - name: 确定发布版本号
         id: version
+        shell: bash
         run: |
           TAG_VERSION="${{ github.ref_name }}"
           TAG_VERSION="${TAG_VERSION#v}"
@@ -75,6 +80,7 @@ jobs:
           echo "发布版本号：$RELEASE_VERSION"
 
       - name: 验证版本号一致性
+        shell: bash
         run: |
           GRADLE_VERSION="${{ steps.props.outputs.mod_version }}"
           RELEASE_VERSION="${{ steps.version.outputs.version }}"
@@ -82,10 +88,10 @@ jobs:
             echo "::warning::gradle.properties 版本 ($GRADLE_VERSION) 与发布版本 ($RELEASE_VERSION) 不一致"
           fi
 
-      - name: 设置 JDK 21
+      - name: 设置 JDK
         uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: ${{ steps.props.outputs.java_version }}
           distribution: 'temurin'
 
       - name: 构建
@@ -95,6 +101,7 @@ jobs:
 
       - name: 定位 JAR 文件
         id: jar
+        shell: bash
         run: |
           MOD_ID="${{ steps.props.outputs.mod_id }}"
           MC_VER="${{ steps.props.outputs.minecraft_version }}"
@@ -112,6 +119,7 @@ jobs:
 
       - name: 生成 Release 说明
         id: changelog
+        shell: bash
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -n "$PREV_TAG" ]; then
@@ -122,12 +130,29 @@ jobs:
             CHANGES=$(git log --pretty=format:'- %s (%h)' HEAD~10..HEAD)
           fi
 
-          MC_VER="${{ steps.props.outputs.minecraft_version }}"
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "## 此版本的变更" >> $GITHUB_OUTPUT
-          echo "" >> $GITHUB_OUTPUT
-          echo "$CHANGES" >> $GITHUB_OUTPUT
-          EOF
+          # 使用随机定界符避免 heredoc 缩进问题
+          DELIM=$(openssl rand -hex 8)
+          {
+            echo "changelog<<$DELIM"
+            echo "## 此版本的变更"
+            echo ""
+            echo "$CHANGES"
+            echo "$DELIM"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 删除已有 Release（如果存在）
+        shell: bash
+        run: |
+          TAG="${{ github.ref_name }}"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG 已存在，删除中..."
+            gh release delete "$TAG" --yes
+            echo "已删除旧 release"
+          else
+            echo "Release $TAG 不存在，无需删除"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 创建 Release 并上传 JAR
         uses: softprops/action-gh-release@v2
@@ -137,7 +162,7 @@ jobs:
           body: |
             ## ${{ steps.props.outputs.mod_name }} v${{ steps.version.outputs.version }}
 
-            > **Minecraft ${{ steps.props.outputs.minecraft_version }}** · NeoForge
+            > **Minecraft ${{ steps.props.outputs.minecraft_version }}** · ${{ steps.props.outputs.is_forge == 'true' && 'Forge' || 'NeoForge' }}
 
             ${{ steps.changelog.outputs.changelog }}
 
@@ -149,10 +174,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 输出发布摘要
+        shell: bash
         run: |
           echo "============================================"
           echo "  发布完成！"
           echo "  版本：v${{ steps.version.outputs.version }}"
           echo "  MC 版本：${{ steps.props.outputs.minecraft_version }}"
+          echo "  JDK 版本：${{ steps.props.outputs.java_version }}"
           echo "  产物：${{ steps.jar.outputs.name }}"
           echo "============================================"
