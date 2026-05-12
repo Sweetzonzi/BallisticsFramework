@@ -27,7 +27,7 @@ public class ExampleMeleeWeapon extends SwordItem {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     public ExampleMeleeWeapon(Properties properties) {
-        super(Tiers.IRON, properties);
+        super(Tiers.IRON, 3, -2.4F, properties);
     }
 
     /**

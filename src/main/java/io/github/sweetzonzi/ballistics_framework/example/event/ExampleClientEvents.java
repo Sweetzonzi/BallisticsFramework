@@ -10,10 +10,10 @@ import net.minecraft.client.model.geom.ModelLayers;
 import net.minecraft.client.renderer.entity.HumanoidMobRenderer;
 import net.minecraft.client.renderer.entity.ThrownItemRenderer;
 import net.minecraft.resources.ResourceLocation;
-import net.neoforged.api.distmarker.Dist;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.EventBusSubscriber;
-import net.neoforged.neoforge.client.event.EntityRenderersEvent;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.EntityRenderersEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
 import org.slf4j.Logger;
 
 /**
@@ -22,14 +22,14 @@ import org.slf4j.Logger;
  * 注册实体渲染器。仅在客户端生效。
  * 所有渲染器复用原版材质——投射物用雪球渲染器，靶子用玩家模型。
  */
-@EventBusSubscriber(modid = BallisticsFramework.MOD_ID, value = Dist.CLIENT)
+@Mod.EventBusSubscriber(modid = BallisticsFramework.MOD_ID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.MOD)
 public final class ExampleClientEvents {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
     /** 靶子实体纹理：复用原版僵尸纹理 */
     private static final ResourceLocation TARGET_TEXTURE =
-            ResourceLocation.withDefaultNamespace("textures/entity/zombie/zombie.png");
+            new ResourceLocation("textures/entity/zombie/zombie.png");
 
     private ExampleClientEvents() {}
 

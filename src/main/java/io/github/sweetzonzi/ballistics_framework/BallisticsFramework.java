@@ -4,9 +4,10 @@ import com.mojang.logging.LogUtils;
 import io.github.sweetzonzi.ballistics_framework.api.BFDamageExtensions;
 import io.github.sweetzonzi.ballistics_framework.example.ExampleConfig;
 import io.github.sweetzonzi.ballistics_framework.example.ExampleContent;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.ModContainer;
-import net.neoforged.fml.common.Mod;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.ModLoadingContext;
+import net.minecraftforge.fml.config.ModConfig;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
 
 @Mod(BallisticsFramework.MOD_ID)
@@ -19,13 +20,12 @@ public class BallisticsFramework {
      * Mod 构造函数。
      * <p>
      * 注册配置系统、初始化侧信道扩展、注册示例内容（仅在开发环境生效）。
-     *
-     * @param modEventBus  Mod 事件总线（用于注册 DeferredRegister）
-     * @param modContainer 当前 Mod 容器（用于注册 Config）
+     * Forge 1.20.1 使用无参构造器，通过 {@link FMLJavaModLoadingContext} 获取事件总线，
+     * 通过 {@link ModLoadingContext} 注册配置。
      */
-    public BallisticsFramework(IEventBus modEventBus, ModContainer modContainer) {
+    public BallisticsFramework() {
         // 注册 config（无论开关状态，config 始终存在）
-        ExampleConfig.register(modContainer);
+        ExampleConfig.register();
         LOGGER.info("[BF-Example] Config 已注册。shouldEnable={} (生产环境={})",
                 ExampleConfig.shouldEnable(),
                 ExampleConfig.isProduction());
@@ -34,6 +34,7 @@ public class BallisticsFramework {
         BFDamageExtensions.init();
 
         // 示例内容注册（仅在开发环境 + config 开启时生效）
+        var modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
         ExampleContent.init(modEventBus);
     }
 }

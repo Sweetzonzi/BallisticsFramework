@@ -10,13 +10,13 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.item.ArmorItem;
+import net.minecraft.world.item.ArmorMaterial;
 import net.minecraft.world.item.ArmorMaterials;
 import net.minecraft.world.item.Item;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
-import net.neoforged.neoforge.registries.DeferredHolder;
-import net.neoforged.neoforge.registries.DeferredItem;
-import net.neoforged.neoforge.registries.DeferredRegister;
+import net.minecraftforge.event.entity.EntityAttributeCreationEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.registries.DeferredRegister;
+import net.minecraftforge.registries.RegistryObject;
 import org.slf4j.Logger;
 
 /**
@@ -33,40 +33,40 @@ public final class ExampleContent {
 
     // ======================== 物品注册表 ========================
 
-    private static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(ExampleCreativeTab.MOD_ID);
+    private static final DeferredRegister<Item> ITEMS = DeferredRegister.create(Registries.ITEM, ExampleCreativeTab.MOD_ID);
 
     /** 示例近战武器（60mm 穿深） */
-    public static final DeferredItem<ExampleMeleeWeapon> EXAMPLE_MELEE_WEAPON = ITEMS.register(
+    public static final RegistryObject<ExampleMeleeWeapon> EXAMPLE_MELEE_WEAPON = ITEMS.register(
             "example_melee_weapon",
             () -> new ExampleMeleeWeapon(new Item.Properties())
     );
 
     /** 示例投射物发射物品 */
-    public static final DeferredItem<ExampleProjectileItem> EXAMPLE_PROJECTILE = ITEMS.register(
+    public static final RegistryObject<ExampleProjectileItem> EXAMPLE_PROJECTILE = ITEMS.register(
             "example_projectile",
             () -> new ExampleProjectileItem(new Item.Properties())
     );
 
     /** 示例头盔 */
-    public static final DeferredItem<ExampleArmorItem> EXAMPLE_HELMET = ITEMS.register(
+    public static final RegistryObject<ExampleArmorItem> EXAMPLE_HELMET = ITEMS.register(
             "example_helmet",
             () -> new ExampleArmorItem(ArmorMaterials.IRON, ArmorItem.Type.HELMET, new Item.Properties())
     );
 
     /** 示例胸甲 */
-    public static final DeferredItem<ExampleArmorItem> EXAMPLE_CHESTPLATE = ITEMS.register(
+    public static final RegistryObject<ExampleArmorItem> EXAMPLE_CHESTPLATE = ITEMS.register(
             "example_chestplate",
             () -> new ExampleArmorItem(ArmorMaterials.IRON, ArmorItem.Type.CHESTPLATE, new Item.Properties())
     );
 
     /** 示例护腿 */
-    public static final DeferredItem<ExampleArmorItem> EXAMPLE_LEGGINGS = ITEMS.register(
+    public static final RegistryObject<ExampleArmorItem> EXAMPLE_LEGGINGS = ITEMS.register(
             "example_leggings",
             () -> new ExampleArmorItem(ArmorMaterials.IRON, ArmorItem.Type.LEGGINGS, new Item.Properties())
     );
 
     /** 示例靴子 */
-    public static final DeferredItem<ExampleArmorItem> EXAMPLE_BOOTS = ITEMS.register(
+    public static final RegistryObject<ExampleArmorItem> EXAMPLE_BOOTS = ITEMS.register(
             "example_boots",
             () -> new ExampleArmorItem(ArmorMaterials.IRON, ArmorItem.Type.BOOTS, new Item.Properties())
     );
@@ -77,7 +77,7 @@ public final class ExampleContent {
             DeferredRegister.create(Registries.ENTITY_TYPE, ExampleCreativeTab.MOD_ID);
 
     /** 示例投射物实体 */
-    public static final DeferredHolder<EntityType<?>, EntityType<ExampleProjectileEntity>> EXAMPLE_PROJECTILE_ENTITY =
+    public static final RegistryObject<EntityType<ExampleProjectileEntity>> EXAMPLE_PROJECTILE_ENTITY =
             ENTITIES.register("example_projectile", () ->
                     EntityType.Builder.<ExampleProjectileEntity>of(
                                     ExampleProjectileEntity::new, MobCategory.MISC)
@@ -88,7 +88,7 @@ public final class ExampleContent {
             );
 
     /** 示例靶子实体 */
-    public static final DeferredHolder<EntityType<?>, EntityType<ExampleTargetEntity>> EXAMPLE_TARGET_ENTITY =
+    public static final RegistryObject<EntityType<ExampleTargetEntity>> EXAMPLE_TARGET_ENTITY =
             ENTITIES.register("example_target", () ->
                     EntityType.Builder.<ExampleTargetEntity>of(
                                     ExampleTargetEntity::new, MobCategory.MISC)

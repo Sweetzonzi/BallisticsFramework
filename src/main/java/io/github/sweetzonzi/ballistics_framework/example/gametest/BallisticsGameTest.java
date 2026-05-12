@@ -7,23 +7,16 @@ import io.github.sweetzonzi.ballistics_framework.api.BFHurtTarget;
 import io.github.sweetzonzi.ballistics_framework.example.ExampleContent;
 import io.github.sweetzonzi.ballistics_framework.example.entity.ExampleTargetEntity;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Vec3i;
-import net.minecraft.gametest.framework.BeforeBatch;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.GameType;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate;
 import net.minecraft.world.phys.Vec3;
-import net.neoforged.neoforge.gametest.GameTestHolder;
-import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
+import net.minecraftforge.gametest.GameTestHolder;
 
 /**
  * BallisticsFramework 穿甲管线的自动化 GameTest。
@@ -37,33 +30,11 @@ import net.neoforged.neoforge.gametest.PrefixGameTestTemplate;
  * 断言精度说明：浮点数比较使用 {@link Math#abs 差值 ≤ 0.01} 容忍浮点误差。
  */
 @GameTestHolder("ballistics_framework")
-@PrefixGameTestTemplate(false)
 public class BallisticsGameTest {
 
     private static final float EPSILON = 0.01f;
     private static final ResourceLocation ARENA_ID =
-            ResourceLocation.fromNamespaceAndPath("ballistics_framework", "empty_arena");
-
-    /**
-     * 在所有GameTest批次开始前，程序化创建测试场地结构模板。
-     * <p>
-     * 通过 StructureTemplate.fillFromWorld 在 ServerLevel 中搭建实体内存中的方块，
-     * 然后捕获为标准结构模板并保存到 StructureTemplateManager，
-     * 完全避免手动编辑 .nbt 文件的复杂性和格式错误风险。
-     */
-    @BeforeBatch(batch = "defaultBatch")
-    public static void beforeBatch(ServerLevel level) {
-        BlockPos origin = new BlockPos(0, 0, 0);
-        for (int x = 0; x < 5; x++) {
-            for (int z = 0; z < 5; z++) {
-                level.setBlock(origin.offset(x, 0, z),
-                        Blocks.STONE_BRICKS.defaultBlockState(), 3);
-            }
-        }
-        StructureTemplate template = level.getStructureManager().getOrCreate(ARENA_ID);
-        template.fillFromWorld(level, origin, new Vec3i(5, 3, 5), false, Blocks.STRUCTURE_VOID);
-        level.getStructureManager().save(ARENA_ID);
-    }
+            new ResourceLocation("ballistics_framework", "empty_arena");
 
     // ======================== 场景1：近战武器裸打靶子 ========================
 
@@ -76,7 +47,7 @@ public class BallisticsGameTest {
     public static void testMeleeAgainstUnarmoredTarget(GameTestHelper helper) {
         ExampleTargetEntity target = spawnTarget(helper, new BlockPos(2, 1, 2));
 
-        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        Player player = helper.makeMockPlayer();
         BFDamageContext ctx = BFDamageContext.builder()
                 .source(helper.getLevel().damageSources().mobAttack(player))
                 .baseDamage(15f)
@@ -106,7 +77,7 @@ public class BallisticsGameTest {
         ExampleTargetEntity target = spawnTarget(helper, new BlockPos(2, 1, 2));
         equipExampleArmor(target);
 
-        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        Player player = helper.makeMockPlayer();
         BFDamageContext ctx = BFDamageContext.builder()
                 .source(helper.getLevel().damageSources().mobAttack(player))
                 .baseDamage(15f)
@@ -137,7 +108,7 @@ public class BallisticsGameTest {
         ExampleTargetEntity target = spawnTarget(helper, new BlockPos(2, 1, 2));
         equipExampleArmor(target);
 
-        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        Player player = helper.makeMockPlayer();
         BFDamageContext ctx = BFDamageContext.builder()
                 .source(helper.getLevel().damageSources().mobAttack(player))
                 .baseDamage(15f)
@@ -167,7 +138,7 @@ public class BallisticsGameTest {
         ExampleTargetEntity target = spawnTarget(helper, new BlockPos(2, 1, 2));
         equipExampleArmor(target);
 
-        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        Player player = helper.makeMockPlayer();
         BFDamageContext ctx = BFDamageContext.builder()
                 .source(helper.getLevel().damageSources().mobAttack(player))
                 .baseDamage(15f)
@@ -198,7 +169,7 @@ public class BallisticsGameTest {
         ExampleTargetEntity target = spawnTarget(helper, new BlockPos(2, 1, 2));
         equipExampleArmor(target);
 
-        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        Player player = helper.makeMockPlayer();
         BFDamageContext ctx = BFDamageContext.builder()
                 .source(helper.getLevel().damageSources().playerAttack(player))
                 .baseDamage(25f)
@@ -229,7 +200,7 @@ public class BallisticsGameTest {
     public static void testProjectileAgainstUnarmoredTarget(GameTestHelper helper) {
         ExampleTargetEntity target = spawnTarget(helper, new BlockPos(2, 1, 2));
 
-        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        Player player = helper.makeMockPlayer();
         BFDamageContext ctx = BFDamageContext.builder()
                 .source(helper.getLevel().damageSources().playerAttack(player))
                 .baseDamage(25f)
@@ -265,7 +236,7 @@ public class BallisticsGameTest {
 
         float hpBefore = zombie.getHealth();
 
-        Player player = helper.makeMockPlayer(GameType.SURVIVAL);
+        Player player = helper.makeMockPlayer();
         BFDamageContext ctx = BFDamageContext.builder()
                 .source(helper.getLevel().damageSources().playerAttack(player))
                 .baseDamage(5f)

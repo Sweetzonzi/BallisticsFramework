@@ -4,7 +4,6 @@ import com.mojang.logging.LogUtils;
 import io.github.sweetzonzi.ballistics_framework.api.BFDamageContext;
 import io.github.sweetzonzi.ballistics_framework.api.BFDamageHandler;
 import io.github.sweetzonzi.ballistics_framework.api.BFHurtTarget;
-import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -37,7 +36,7 @@ public class ExampleProjectileEntity extends ThrowableProjectile implements BFDa
     }
 
     @Override
-    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+    protected void defineSynchedData() {
         // 投射物无需额外同步数据
     }
 

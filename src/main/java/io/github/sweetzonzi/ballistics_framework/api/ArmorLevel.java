@@ -75,8 +75,8 @@ public enum ArmorLevel {
         this.lowerRha = lowerRha;
         this.upperRha = upperRha;
         String name = name().toLowerCase();
-        this.armorDisplayName = ResourceLocation.fromNamespaceAndPath("ballistics_framework", "armor_level/" + name + "/armor");
-        this.penetrationDisplayName = ResourceLocation.fromNamespaceAndPath("ballistics_framework", "armor_level/" + name + "/penetration");
+        this.armorDisplayName = new ResourceLocation("ballistics_framework", "armor_level/" + name + "/armor");
+        this.penetrationDisplayName = new ResourceLocation("ballistics_framework", "armor_level/" + name + "/penetration");
     }
 
     // ======================== 等级映射 ========================
@@ -146,7 +146,7 @@ public enum ArmorLevel {
      * @return 可本地化的护甲显示名
      */
     public Component getArmorDisplayName() {
-        return Component.translatable(armorDisplayName.toLanguageKey());
+        return Component.translatable(armorDisplayName.getNamespace() + "." + armorDisplayName.getPath().replace("/", "."));
     }
 
     /**
@@ -157,6 +157,6 @@ public enum ArmorLevel {
      * @return 可本地化的穿甲显示名
      */
     public Component getPenetrationDisplayName() {
-        return Component.translatable(penetrationDisplayName.toLanguageKey());
+        return Component.translatable(penetrationDisplayName.getNamespace() + "." + penetrationDisplayName.getPath().replace("/", "."));
     }
 }

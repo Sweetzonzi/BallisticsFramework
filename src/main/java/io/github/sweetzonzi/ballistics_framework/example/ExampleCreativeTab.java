@@ -5,9 +5,9 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.neoforge.registries.DeferredHolder;
-import net.neoforged.neoforge.registries.DeferredRegister;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.registries.DeferredRegister;
+import net.minecraftforge.registries.RegistryObject;
 import org.slf4j.Logger;
 
 /**
@@ -28,7 +28,7 @@ public final class ExampleCreativeTab {
             DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MOD_ID);
 
     /** 武器标签页：放置近战武器和投射物发射器 */
-    public static final DeferredHolder<CreativeModeTab, CreativeModeTab> EXAMPLE_WEAPONS = TABS.register(
+    public static final RegistryObject<CreativeModeTab> EXAMPLE_WEAPONS = TABS.register(
             "example_weapons",
             () -> CreativeModeTab.builder()
                     .title(Component.literal("BF Example - Weapons"))
@@ -41,7 +41,7 @@ public final class ExampleCreativeTab {
     );
 
     /** 护甲标签页：放置示例护甲四件套 */
-    public static final DeferredHolder<CreativeModeTab, CreativeModeTab> EXAMPLE_EQUIPMENT = TABS.register(
+    public static final RegistryObject<CreativeModeTab> EXAMPLE_EQUIPMENT = TABS.register(
             "example_equipment",
             () -> CreativeModeTab.builder()
                     .title(Component.literal("BF Example - Equipment"))

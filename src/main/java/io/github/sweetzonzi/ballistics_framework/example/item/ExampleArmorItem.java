@@ -4,7 +4,6 @@ import com.mojang.logging.LogUtils;
 import io.github.sweetzonzi.ballistics_framework.api.ArmorLevel;
 import io.github.sweetzonzi.ballistics_framework.api.BFArmorMaterial;
 import io.github.sweetzonzi.ballistics_framework.api.BFDamageContext;
-import net.minecraft.core.Holder;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ArmorMaterial;
@@ -25,7 +24,7 @@ public class ExampleArmorItem extends ArmorItem implements BFArmorMaterial {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    public ExampleArmorItem(Holder<ArmorMaterial> material, Type type, Properties properties) {
+    public ExampleArmorItem(ArmorMaterial material, Type type, Properties properties) {
         super(material, type, properties);
     }
 
