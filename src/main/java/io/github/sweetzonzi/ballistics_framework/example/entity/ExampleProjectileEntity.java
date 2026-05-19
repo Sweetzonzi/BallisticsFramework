@@ -98,26 +98,31 @@ public class ExampleProjectileEntity extends ThrowableProjectile implements BFDa
 
     @Override
     public void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {
-        LOGGER.info("[BF-Example] 回调 PENETRATED: target={}", target.getBFEntity().getName().getString());
+        if (target.getBFEntity() != null)
+            LOGGER.info("[BF-Example] 回调 PENETRATED: target={}", target.getBFEntity().getName().getString());
     }
 
     @Override
     public void onBlocked(BFHurtTarget target, BFDamageContext ctx) {
-        LOGGER.info("[BF-Example] 回调 BLOCKED: target={}", target.getBFEntity().getName().getString());
+        if (target.getBFEntity() != null)
+            LOGGER.info("[BF-Example] 回调 BLOCKED: target={}", target.getBFEntity().getName().getString());
     }
 
     @Override
     public void onRicochet(BFHurtTarget target, BFDamageContext ctx) {
-        LOGGER.info("[BF-Example] 回调 RICOCHET: target={}", target.getBFEntity().getName().getString());
+        if (target.getBFEntity() != null)
+            LOGGER.info("[BF-Example] 回调 RICOCHET: target={}", target.getBFEntity().getName().getString());
     }
 
     @Override
     public void onOvermatch(BFHurtTarget target, BFDamageContext ctx) {
-        LOGGER.info("[BF-Example] 回调 OVERMATCH: target={}", target.getBFEntity().getName().getString());
+        if (target.getBFEntity() != null)
+            LOGGER.info("[BF-Example] 回调 OVERMATCH: target={}", target.getBFEntity().getName().getString());
     }
 
     @Override
     public void onSpall(BFHurtTarget target, BFDamageContext ctx) {
-        LOGGER.info("[BF-Example] 回调 SPALL: target={}", target.getBFEntity().getName().getString());
+        if (target.getBFEntity() != null)
+            LOGGER.info("[BF-Example] 回调 SPALL: target={}", target.getBFEntity().getName().getString());
     }
 }
