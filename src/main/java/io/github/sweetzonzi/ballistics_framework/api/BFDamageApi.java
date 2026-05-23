@@ -4,6 +4,9 @@ import io.github.sweetzonzi.ballistics_framework.internal.BFArmorAdapter;
 import io.github.sweetzonzi.ballistics_framework.internal.BFContextStack;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -185,5 +188,67 @@ public final class BFDamageApi {
     @Nullable
     public static BFDamageContext getContextFor(Object target) {
         return BFContextStack.INSTANCE.getContextFor(target);
+    }
+
+    // ======================== 命中前目标解析 ========================
+
+    /**
+     * 解析命中目标。
+     * <p>
+     * 若 hitEntity 实现了 {@link BFHitResolver}，执行精确验证并返回修正后的目标与几何。
+     * 否则，若 hitEntity 自身是 {@link BFHurtTarget}，直接包装返回。
+     * 返回 null 表示未命中（投射物应继续飞行）。
+     * <p>
+     * 典型调用模式（武器模组侧）：
+     * <pre>{@code
+     * var resolved = BFDamageApi.resolveHitTarget(hitEntity, hitPoint, delta);
+     * if (resolved == null) {
+     *     event.setCanceled(true); // 假阳性，投射物继续飞行
+     *     return;
+     * }
+     * var ctx = BFDamageContext.builder()
+     *     .hitPoint(resolved.correctedHitPoint())
+     *     .hitNormal(resolved.correctedHitNormal())
+     *     .extensions(resolved.extensions().copy())
+     *     // ...
+     *     .build();
+     * BFDamageApi.hurt(resolved.actualTarget(), ctx);
+     * }</pre>
+     *
+     * @param hitEntity 原版碰撞检测命中的实体
+     * @param hitPoint  原版报告的命中点
+     * @param delta     搜索矢量，其模为搜索距离上限（m），方向为命中方向
+     * @return 解析结果；{@code null} 表示未命中
+     */
+    @Nullable
+    public static BFHitResolveResult resolveHitTarget(
+            Entity hitEntity, Vec3 hitPoint, Vec3 delta) {
+        if (hitEntity instanceof BFHitResolver resolver) {
+            return resolver.resolveHit(hitPoint, delta);
+        }
+        if (hitEntity instanceof BFHurtTarget bf) {
+            return new BFHitResolveResult(bf, hitPoint, Vec3.ZERO);
+        }
+        return null;
+    }
+
+    /**
+     * 从原版 HitResult 解析命中目标。
+     * <p>
+     * 相比 {@link #resolveHitTarget(Entity, Vec3, Vec3)}，
+     * 本重载自动从 EntityHitResult 中提取命中实体和命中点。
+     * 非 EntityHitResult（如方块命中）返回 null。
+     *
+     * @param hitResult 原版命中结果
+     * @param delta     搜索矢量
+     * @return 解析结果；null 表示未命中或无效命中类型
+     */
+    @Nullable
+    public static BFHitResolveResult resolveHitTarget(
+            HitResult hitResult, Vec3 delta) {
+        if (hitResult instanceof EntityHitResult ehr) {
+            return resolveHitTarget(ehr.getEntity(), hitResult.getLocation(), delta);
+        }
+        return null;
     }
 }

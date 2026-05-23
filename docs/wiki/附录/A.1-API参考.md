@@ -106,6 +106,30 @@ static boolean hasContextFor(Object target)
  */
 @Nullable
 static BFDamageContext getContextFor(Object target)
+
+// ========== 命中前目标解析 ==========
+
+/**
+ * 解析命中目标。若 hitEntity 实现了 BFHitResolver，执行精确验证并返回
+ * 修正后的目标与几何。否则若 hitEntity 是 BFHurtTarget，直接包装返回。
+ * 返回 null 表示未命中（投射物应继续飞行）。
+ * @param hitEntity 原版碰撞检测命中的实体
+ * @param hitPoint  原版报告的命中点
+ * @param delta     搜索矢量，其模为搜索距离上限（m），方向为命中方向
+ * @return 解析结果；null 表示未命中
+ */
+@Nullable
+static BFHitResolveResult resolveHitTarget(Entity hitEntity, Vec3 hitPoint, Vec3 delta)
+
+/**
+ * 从原版 HitResult 解析命中目标。自动从 EntityHitResult 中提取命中实体和命中点。
+ * 非 EntityHitResult（如方块命中）返回 null。
+ * @param hitResult 原版命中结果
+ * @param delta     搜索矢量
+ * @return 解析结果；null 表示未命中或无效命中类型
+ */
+@Nullable
+static BFHitResolveResult resolveHitTarget(HitResult hitResult, Vec3 delta)
 ```
 
 ---
@@ -355,4 +379,59 @@ default float calculateFinalDamage(EquipmentSlot slot, BFDamageContext ctx,
 // @return 对应装备槽位；命中点无效或此物品不应处理时返回 null
 @Nullable
 default EquipmentSlot mapHitToSlot(LivingEntity wearer, BFDamageContext ctx)
+```
+
+---
+
+## BFHitResolver
+
+**`public interface BFHitResolver`** — 命中前目标解析接口。由代理实体实现，在 `BFDamageApi.hurt()` 调用之前执行，将 AABB 命中重定向到真正的物理伤害目标。
+
+### Abstract 方法
+
+```java
+/**
+ * 解析命中的实际伤害目标（主方法）。
+ * @param hitPoint 原版报告的命中点（世界坐标）
+ * @param delta    搜索矢量，其模为搜索距离上限（m），方向为命中方向
+ * @return 解析结果；null 表示实际未命中
+ */
+@Nullable
+BFHitResolveResult resolveHit(Vec3 hitPoint, Vec3 delta)
+```
+
+### Default 方法
+
+```java
+/**
+ * 便利重载：从原版 HitResult 提取命中点后委托给二参数方法。
+ * @param hitResult 原版命中结果（取其 getLocation() 作为命中点）
+ * @param delta     搜索矢量
+ * @return 解析结果；null 表示未命中
+ */
+@Nullable
+default BFHitResolveResult resolveHit(HitResult hitResult, Vec3 delta)
+```
+
+---
+
+## BFHitResolveResult
+
+**`public record BFHitResolveResult(BFHurtTarget actualTarget, Vec3 correctedHitPoint, Vec3 correctedHitNormal, BFDamageExtensions extensions)`** — 命中解析结果 record。携带修正后的目标引用、命中几何和扩展数据，可直接用于构造 `BFDamageContext`。
+
+### 组件
+
+| 组件 | 类型 | 说明 |
+|------|------|------|
+| `actualTarget` | `BFHurtTarget` | 真正的协议伤害目标 |
+| `correctedHitPoint` | `Vec3` | 修正后的命中点世界坐标 |
+| `correctedHitNormal` | `Vec3` | 修正后的命中面法线 |
+| `extensions` | `BFDamageExtensions` | 解析器提供的扩展数据 |
+
+### 便利构造器
+
+```java
+// 无扩展数据的便利构造器
+BFHitResolveResult(BFHurtTarget actualTarget, Vec3 correctedHitPoint, Vec3 correctedHitNormal)
+// 等价于 new BFHitResolveResult(actualTarget, correctedHitPoint, correctedHitNormal, new BFDamageExtensions())
 ```
