@@ -16,20 +16,29 @@
 
 - **Minecraft 1.21.1**, **NeoForge 21.1.219**, **Java 21**
 - **mod_id**: `ballistics_framework`, package: `io.github.sweetzonzi.ballistics_framework`
-- Current version: `1.0.0.alpha.3` (from `gradle.properties`)
+- Current version: `1.0.0.alpha.5` (from `gradle.properties`)
 - License: LGPL 3.0
 - Wiki (MkDocs) at `docs/`, CI deploys to GitHub Pages
 
 ## Architecture
 
 ```
-api/       ← public API — consumers only depend on this
+api/
+  ├── (existing 12 terminal ballistics classes, zero changes)
+  └── trajectory/              ← external ballistics sub-package (new)
+        ├── TrajectorySample.java
+        ├── TrajectoryResult.java
+        ├── FiringSolution.java
+        ├── BallisticConfig.java
+        ├── DensityFunction.java
+        ├── MinecraftTrajectory.java
+        └── RealisticTrajectory.java
 internal/  ← private impl — never reference from external mods
 mixin/     ← Mixin injection classes
 example/   ← example content (dev-only, gated by config)
 ```
 
-Key entrypoint: `api/BFDamageApi.hurt(Object target, BFDamageContext ctx)`
+Key entrypoints: `api/BFDamageApi.hurt(Object target, BFDamageContext ctx)` (terminal ballistics), `api/trajectory/MinecraftTrajectory` and `api/trajectory/RealisticTrajectory` (external ballistics).
 
 Pipeline branches in `BFDamageApi.hurt()`:
 1. **BFHurtTarget** → full pipeline via target's methods
@@ -53,6 +62,8 @@ Mixin interceptors (`EntityHurtMixin`, `LivingEntityHurtMixin`) catch non-protoc
 
 - `BFDamageExtensions.init()` must be called before any API use (done in mod constructor)
 - All values in SI units: penetration in **mm** RHA, velocity in **m/s**, caliber in **m**, mass in **kg**
+- Trajectory solver input units: **MinecraftTrajectory** uses m/tick (matching `Entity.getDeltaMovement()`), output auto-converts to m/s (×20). **RealisticTrajectory** uses full SI (m/s for velocity, kg for mass, m for dimensions).
+- Both solvers auto-detect degenerate paths (no-gravity → linear motion, no-drag → analytic parabola) — users call the same method regardless.
 - `BFDamageContext` is a `record` — use `Builder` or `withHandler()`/`childContext()` for modifications
 - `BFDamageApi.hurt()` return value may NOT equal actual HP loss (vanilla armor applies secondary reduction)
 - Weapon mods use `BFDamageHandler.dealDamage(target, ctx)` to auto-inject handler

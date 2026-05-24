@@ -13,9 +13,12 @@
 
 ## What is This?
 
-BallisticsFramework is a NeoForge (1.21.1) library mod that defines a **Terminal Ballistics Damage Protocol Layer** for the Minecraft modding ecosystem.
+BallisticsFramework is a NeoForge (1.21.1) library mod providing two standardized capabilities for the Minecraft modding ecosystem:
 
-It serves as a compatibility protocol that multiple gun, vehicle, and armor mods can depend on together. Problems it solves:
+- **Terminal Ballistics Damage Protocol** — a unified penetration adjudication and damage negotiation layer for gun, vehicle, and armor mods
+- **External Ballistics Solvers** — forward trajectory solving, firing angle inverse solving, and moving-target lead prediction with dual physics models (vanilla drag-multiplier & realistic quadratic drag)
+
+It serves as a common compatibility layer that multiple mods can depend on together. Problems it solves:
 
 - When a bullet hits armor, how do you pass high-dimensional info like **penetration, impact angle, and hit location**?
 - How does an armor mod use **hit normals and velocity vectors** for penetration slope correction?
@@ -161,6 +164,66 @@ public float calculateFinalDamage(BFDamageContext ctx, PenetrationResult result)
 
 ***
 
+## Trajectory Solving
+
+The framework includes external ballistics solvers covering the full flight phase from launch to impact. Choose the model based on projectile physics:
+
+| Projectile Type | Solver | Input Units |
+|-----------------|--------|:---:|
+| Vanilla projectiles (arrows, snowballs, fireballs, etc.) | `MinecraftTrajectory` | m/tick |
+| Custom quadratic-drag projectiles | `RealisticTrajectory` | m/s |
+
+All classes in `api.trajectory` sub-package. Methods are `static` and thread-safe.
+
+### Forward Solve — Trajectory Simulation
+
+```java
+// Vanilla arrow trajectory
+TrajectoryResult traj = MinecraftTrajectory.arrowTrajectory(
+    arrowEntity.position(), arrowEntity.getDeltaMovement(), 100);
+
+// Realistic model — 120mm tank cannon APFSDS
+BallisticConfig config = BallisticConfig.fromExtensions(exts, 0.35f, 0.8f, 0.05f, 200);
+TrajectoryResult traj = RealisticTrajectory.forwardSolve(
+    shooterPos, new Vec3(0, 0, 1500), config, DensityFunction.MC_OVERWORLD);
+
+// Results feed directly into the terminal ballistics context
+BFDamageContext hitCtx = BFDamageContext.builder()
+    .source(src).baseDamage(500f)
+    .hitPoint(traj.terminalPoint())         // impact point
+    .hitVelocity(traj.terminalVelocity())   // terminal velocity (m/s), direct pass
+    .build();
+```
+
+### Firing Angle — AI Turret Aiming
+
+```java
+// Vanilla arrow firing angle — one-liner
+List<FiringSolution> solutions = MinecraftTrajectory.arrowFiringAngle(
+    turretPos, targetPos, 6.0f, turretVelocity, 200);
+
+if (!solutions.isEmpty()) {
+    FiringSolution sol = solutions.get(0);       // low arc solution
+    arrowEntity.setDeltaMovement(
+        sol.direction().scale(6.0f).add(turretVelocity));
+}
+```
+
+Returns two solutions (low arc + high arc) when velocity is sufficient; one at critical velocity; empty when insufficient.
+
+### Moving Target Lead
+
+```java
+// Arrow lead prediction against a moving player
+FiringSolution lead = MinecraftTrajectory.arrowWithLead(
+    shooterPos, targetPos, targetVel, Vec3.ZERO,
+    speed, shooterVel, 200);
+```
+
+The solver first extrapolates using `distance / speed`, then iterates to convergence — typically 2–4 rounds.
+
+***
+
 ## Advanced Usage
 
 ### Overridable Pipeline Methods
@@ -224,6 +287,8 @@ public static final BFDamageExtensionKey<HitBox> HIT_BOX =
 
 ### All SI Units
 
+Trajectory solver outputs share SI units with terminal ballistics fields:
+
 | Field | Unit | Description |
 |-------|------|-------------|
 | `hitVelocity` | m/s | Impact velocity vector |
@@ -231,12 +296,22 @@ public static final BFDamageExtensionKey<HitBox> HIT_BOX =
 | `FUSE_DELAY` | s | Fuse delay |
 | `CALIBER` | m | Projectile caliber |
 | `MASS` | kg | Projectile mass |
+| `TrajectoryResult.terminalVelocity()` | m/s | Solver terminal velocity (matches `hitVelocity` — direct pass) |
+| `RealisticTrajectory` all inputs | SI | m/s, kg, m, m/s² |
 
 ***
 
 ## Architecture Overview
 
 ```
+                         External Ballistics (api.trajectory/)    Terminal Ballistics (api/)
+                  ┌─────────────────────────┐      ┌──────────────────┐
+                  │ forwardSolve             │ ───→ │ penetration check │
+                  │ solveFiringAngle          │ ctx  │ damage calc       │
+                  │ solveWithLead             │      │ callbacks         │
+                  └─────────────────────────┘      └──────────────────┘
+                       projectile in flight              moment of impact
+
 BFDamageApi.hurt(target, ctx)          ← weapon mod entry
     │
     ├── target instanceof BFHurtTarget
@@ -251,7 +326,7 @@ BFDamageApi.hurt(target, ctx)          ← weapon mod entry
           └── living.hurt(source, baseDamage)   ← vanilla fallback
 ```
 
-Only the `api/` package is exposed to consumers; internal implementations live in the `internal/` package.
+Only the `api/` and `api/trajectory/` packages are exposed to consumers; internal implementations live in the `internal/` package.
 
 ***
 

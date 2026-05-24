@@ -13,9 +13,12 @@
 
 ## 这是什么？
 
-BallisticsFramework 是一个 NeoForge（1.21.1）lib 模组，为 Minecraft 模组生态定义了一套 **终点弹道伤害协议层**。
+BallisticsFramework 是一个 NeoForge（1.21.1）lib 模组，为 Minecraft 模组生态提供两大标准化能力：
 
-核心定位是一个可供多个枪械、载具、护甲模组共同依赖的兼容协议。协议解决的问题：
+- **终点弹道伤害协议** — 枪械、载具、护甲模组共同依赖的穿甲判定与伤害协商协议
+- **外弹道解算工具** — 弹道正解、瞄准反解、动目标提前量预测，双物理模型（MC 原版 & 二次阻力拟真）
+
+核心定位是一个可供多个模组共同依赖的兼容层。协议解决的问题：
 
 - 子弹命中装甲时，如何传递**穿深、入射角、命中部位**等高维信息？
 - 护甲模组如何根据**命中面法线、速度矢量**做穿深修正和击穿判定？
@@ -162,6 +165,66 @@ public float calculateFinalDamage(BFDamageContext ctx, PenetrationResult result)
 
 ***
 
+## 弹道解算
+
+框架内置外弹道解算器，覆盖"发射 → 命中"的完整飞行阶段。根据弹丸物理类型选择模型：
+
+| 弹丸类型 | 模型 | 入参单位 |
+|---------|------|:---:|
+| 原版弹射物（箭、雪球、火球等）| `MinecraftTrajectory` | m/tick |
+| 自定义二次阻力弹丸 | `RealisticTrajectory` | m/s |
+
+产物位于 `api.trajectory` 子包，所有方法 `static`、线程安全。
+
+### 正解 — 算弹丸轨迹
+
+```java
+// MC 原版箭矢正解
+TrajectoryResult traj = MinecraftTrajectory.arrowTrajectory(
+    arrowEntity.position(), arrowEntity.getDeltaMovement(), 100);
+
+// 拟真模型正解 — 120mm 坦克炮
+BallisticConfig config = BallisticConfig.fromExtensions(exts, 0.35f, 0.8f, 0.05f, 200);
+TrajectoryResult traj = RealisticTrajectory.forwardSolve(
+    shooterPos, new Vec3(0, 0, 1500), config, DensityFunction.MC_OVERWORLD);
+
+// 正解结果直传终点弹道上下文
+BFDamageContext hitCtx = BFDamageContext.builder()
+    .source(src).baseDamage(500f)
+    .hitPoint(traj.terminalPoint())         // 弹丸最终位置
+    .hitVelocity(traj.terminalVelocity())   // 末速 m/s，直传
+    .build();
+```
+
+### 反解 — AI 炮塔自动瞄准
+
+```java
+// MC 原版箭矢反解，一行调用
+List<FiringSolution> solutions = MinecraftTrajectory.arrowFiringAngle(
+    turretPos, targetPos, 6.0f, turretVelocity, 200);
+
+if (!solutions.isEmpty()) {
+    FiringSolution sol = solutions.get(0);       // 平射解
+    arrowEntity.setDeltaMovement(                // 直接设为弹丸速度方向
+        sol.direction().scale(6.0f).add(turretVelocity));
+}
+```
+
+初速充足时返回两个解（平射 + 高抛），临界初速时返回一个，初速不足时返回空列表。
+
+### 动目标提前量
+
+```java
+// 箭矢对移动玩家预测提前量
+FiringSolution lead = MinecraftTrajectory.arrowWithLead(
+    shooterPos, targetPos, targetVel, Vec3.ZERO,
+    speed, shooterVel, 200);
+```
+
+解算器用 `distance/speed` 做首次粗略外推后再迭代微调，2~4 轮收敛。
+
+***
+
 ## 高级用法
 
 ### 可覆写管线方法
@@ -227,19 +290,31 @@ public static final BFDamageExtensionKey<HitBox> HIT_BOX =
 
 ### 全部使用国际单位制
 
-| 字段            | 单位  | 说明          |
-| ------------- | --- | ----------- |
-| `hitVelocity` | m/s | 命中速度矢量      |
-| `penetration` | mm  | 垂直 RHA 等效穿深 |
-| `FUSE_DELAY`  | s   | 引信延迟        |
-| `CALIBER`     | m   | 弹体口径        |
-| `MASS`        | kg  | 弹体质量        |
+外弹道解算器输出与终点弹道字段共用统一的 SI 单位：
+
+| 字段 | 单位 | 说明 |
+|------|------|------|
+| `hitVelocity` | m/s | 命中速度矢量 |
+| `penetration` | mm | 垂直 RHA 等效穿深 |
+| `FUSE_DELAY` | s | 引信延迟 |
+| `CALIBER` | m | 弹体口径 |
+| `MASS` | kg | 弹体质量 |
+| `TrajectoryResult.terminalVelocity()` | m/s | 外弹道末速（与 `hitVelocity` 一致，直传） |
+| `RealisticTrajectory` 全部入参 | SI | m/s, kg, m, m/s² |
 
 ***
 
 ## 架构概要
 
 ```
+                            外弹道（api.trajectory/）              终点弹道（api/）
+                      ┌─────────────────────────┐      ┌──────────────────┐
+                      │ 正解 forwardSolve        │ ───→ │ 穿甲判定           │
+                      │ 反解 solveFiringAngle    │ ctx  │ 伤害计算           │
+                      │ 提前量 solveWithLead     │      │ 回调触发           │
+                      └─────────────────────────┘      └──────────────────┘
+                          子弹飞行中                      命中瞬间
+
 BFDamageApi.hurt(target, ctx)          ← 武器模组入口
     │
     ├── target instanceof BFHurtTarget
@@ -254,7 +329,7 @@ BFDamageApi.hurt(target, ctx)          ← 武器模组入口
           └── living.hurt(source, baseDamage)   ← 直接原版
 ```
 
-对外只暴露 `api/` 包，内部实现位于 `internal/` 包。
+对外只暴露 `api/` 和 `api/trajectory/` 包，内部实现位于 `internal/` 包。
 
 ***
 
