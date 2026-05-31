@@ -33,8 +33,8 @@ public final class BFDamageApi {
      * 对于适配器路径（穿戴 {@link BFArmorMaterial} 护甲的普通 {@link LivingEntity}），
      * 此行为由 {@code BFArmorAdapter.hurt()} 的 Javadoc 详细说明。
      * <p>
-     * 对于普通 {@link Entity}（无协议感知），返回值等价于
-     * {@code entity.hurt(source, baseDamage)} 的成功与否，成功则返回 baseDamage。
+     * 对于普通 {@link Entity}（无协议感知），直接调用原版 {@code entity.hurt(source, baseDamage)}。
+     * 若上下文中有 handler，会通过 {@link BFDamageHandler#onNormalEntityHit} 回调告知原始伤害和成功标志
      *
      * @param target 伤害目标（{@link BFHurtTarget} 或普通 {@link Entity}）
      * @param ctx    完整命中上下文
@@ -110,9 +110,13 @@ public final class BFDamageApi {
                 }
                 return dealt;
             }
-            // 分支3：普通 Entity → 原版回退
+            // 分支3：普通 Entity → 原版回退，但有 handler 时照样触发回调
             if (target instanceof Entity entity) {
-                return entity.hurt(ctx.source(), ctx.baseDamage()) ? ctx.baseDamage() : 0f;
+                boolean success = entity.hurt(ctx.source(), ctx.baseDamage());
+                if (handler != null) {
+                    handler.onNormalEntityHit(entity, ctx, ctx.baseDamage(), success);
+                }
+                return success ? ctx.baseDamage() : 0f;
             }
             return 0f;
         } finally {

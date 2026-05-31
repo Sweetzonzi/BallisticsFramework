@@ -124,4 +124,11 @@ public class ExampleProjectileEntity extends ThrowableProjectile implements BFDa
         if (target.getBFEntity() != null)
             LOGGER.info("[BF-Example] 回调 SPALL: target={}", target.getBFEntity().getName().getString());
     }
+
+    @Override
+    public void onNormalEntityHit(Entity entity, BFDamageContext ctx,
+                                  float baseDamage, boolean success) {
+        LOGGER.info("[BF-Example] 回调 ENTITY_HIT: entity={}, baseDamage={}, success={}",
+                entity.getName().getString(), baseDamage, success);
+    }
 }
