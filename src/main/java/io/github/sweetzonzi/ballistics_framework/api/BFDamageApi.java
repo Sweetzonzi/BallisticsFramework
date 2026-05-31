@@ -193,6 +193,20 @@ public final class BFDamageApi {
     // ======================== 命中前目标解析 ========================
 
     /**
+     * 判断实体是否具有协议感知能力。
+     * <p>
+     * 仅当实体实现了 {@link BFHitResolver} 或 {@link BFHurtTarget} 时返回 true。
+     * 调用方应在调用 {@link #resolveHitTarget} 之前使用此方法分支：
+     * 协议感知实体走完整管线；普通实体回退原版 {@code entity.hurt()}。
+     *
+     * @param entity 待判断的实体
+     * @return true 表示实体具有协议感知能力
+     */
+    public static boolean isProtocolAware(Entity entity) {
+        return entity instanceof BFHitResolver || entity instanceof BFHurtTarget;
+    }
+
+    /**
      * 解析命中目标。
      * <p>
      * 若 hitEntity 实现了 {@link BFHitResolver}，执行精确验证并返回修正后的目标与几何。
