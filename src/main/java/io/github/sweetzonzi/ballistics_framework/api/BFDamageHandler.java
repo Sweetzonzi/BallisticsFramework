@@ -1,5 +1,7 @@
 package io.github.sweetzonzi.ballistics_framework.api;
 
+import net.minecraft.world.entity.Entity;
+
 /**
  * 协议伤害发起方的处理接口。
  * <p>
@@ -8,7 +10,7 @@ package io.github.sweetzonzi.ballistics_framework.api;
  * <p>
  * 职责：
  * <ul>
- *   <li>接收管线执行后的事件回调（击穿/未击穿/跳弹/超匹配(碾压)/破片）</li>
+ *   <li>接收管线执行后的事件回调（击穿/未击穿/跳弹/超匹配(碾压)/破片/普通实体命中）</li>
  *   <li>通过 {@link #isOvermatch} / {@link #isSpall} 的默认实现，
  *       向协议层声明是否应触发超匹配(碾压)与破片回调；实现者可覆写以完全控制条件</li>
  *   <li>向护甲侧提供伤害来源的元信息（护甲侧通过
@@ -19,6 +21,7 @@ package io.github.sweetzonzi.ballistics_framework.api;
  * {@link #onPenetrated}、{@link #onBlocked}、{@link #onRicochet} 三个主结果回调
  * 由 {@link PenetrationResult} 决定；{@link #onOvermatch} 和 {@link #onSpall}
  * 仅由对应的 {@link #isOvermatch} / {@link #isSpall} 返回值决定。
+ * {@link #onNormalEntityHit} 仅在目标为普通 Entity（非协议感知）时触发。
  * <p>
  * 回调在 {@link BFDamageApi#hurt} 的管线末尾、伤害执行之后、上下文栈出栈之前触发。
  */
@@ -50,6 +53,25 @@ public interface BFDamageHandler {
      * 默认未击穿或击穿但非超匹配(碾压)时，弹体碎裂产生破片。
      */
     default void onSpall(BFHurtTarget target, BFDamageContext ctx) {}
+
+    /**
+     * 普通实体命中回调（目标未实现协议感知）。
+     * <p>
+     * 仅在目标为普通 {@link Entity}（非 {@link BFHurtTarget}、非
+     * {@code LivingEntity + BFArmorMaterial} 适配路径）时触发。
+     * 此时协议不做穿甲判定，直接以 {@code ctx.baseDamage()} 调用原版
+     * {@link Entity#hurt}。此回调让武器模组在命中非协议实体时也能获知结果。
+     * <p>
+     * 备选触发路径：{@code dealDamage} / {@code ctx.withHandler(this)} 注入的
+     * handler 会在本回调中收到原始伤害和是否成功造成伤害的信息。
+     *
+     * @param entity      被命中的普通实体
+     * @param ctx         命中上下文（穿深等字段虽存在但未被使用）
+     * @param baseDamage  传入原版 hurt 的原始伤害量（等同于 ctx.baseDamage()）
+     * @param success     原版 hurt 是否返回 true（即是否成功造成伤害）
+     */
+    default void onNormalEntityHit(Entity entity, BFDamageContext ctx,
+                                   float baseDamage, boolean success) {}
 
     // ==================== 判定方法（默认实现，可覆写） ====================
 
@@ -103,6 +125,9 @@ public interface BFDamageHandler {
      * <p>
      * 等价于 {@code BFDamageApi.hurt(target, ctx.withHandler(this))}。
      * 调用方无需知道 {@code withHandler} 的存在。
+     * <p>
+     * 若 target 为普通 {@link Entity}（非协议感知），本方法仍会注入 handler，
+     * 并通过 {@link #onNormalEntityHit} 回调告知结果，而非静默丢弃。
      *
      * @param target 伤害目标（{@link BFHurtTarget} 或普通 {@link net.minecraft.world.entity.Entity}）
      * @param ctx    命中上下文（handler 字段可留空，本方法自动注入）

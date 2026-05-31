@@ -15,6 +15,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
@@ -353,6 +354,7 @@ public class BallisticsGameTest {
         boolean ricochet;
         boolean overmatch;
         boolean spall;
+        boolean entityHit;
 
         @Override
         public void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {
@@ -377,6 +379,12 @@ public class BallisticsGameTest {
         @Override
         public void onSpall(BFHurtTarget target, BFDamageContext ctx) {
             spall = true;
+        }
+
+        @Override
+        public void onNormalEntityHit(Entity entity, BFDamageContext ctx,
+                                      float baseDamage, boolean success) {
+            entityHit = true;
         }
     }
 }

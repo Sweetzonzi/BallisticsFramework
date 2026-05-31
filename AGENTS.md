@@ -16,7 +16,7 @@
 
 - **Minecraft 1.21.1**, **NeoForge 21.1.219**, **Java 21**
 - **mod_id**: `ballistics_framework`, package: `io.github.sweetzonzi.ballistics_framework`
-- Current version: `1.0.0.alpha.5` (from `gradle.properties`)
+- Current version: `1.0.0.alpha.6` (from `gradle.properties`)
 - License: LGPL 3.0
 - Wiki (MkDocs) at `docs/`, CI deploys to GitHub Pages
 
