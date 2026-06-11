@@ -1,8 +1,8 @@
 # Ballistics Framework — A Ballistics Damage Protocol Layer
 
-![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green)
-![NeoForge](https://img.shields.io/badge/NeoForge-21.1.219-blue)
-![Java](https://img.shields.io/badge/Java-21-orange)
+![Minecraft](https://img.shields.io/badge/Minecraft-1.20.1-green)
+![Forge](https://img.shields.io/badge/Forge-47.4.0-orange)
+![Java](https://img.shields.io/badge/Java-17-orange)
 ![License](https://img.shields.io/badge/License-LGPL%203.0-blue)
 [![Wiki](https://img.shields.io/badge/Wiki-GitHub%20Pages-blue?logo=github)](https://sweetzonzi.github.io/BallisticsFramework/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Sweetzonzi/BallisticsFramework)
@@ -13,7 +13,7 @@
 
 ## What is This?
 
-BallisticsFramework is a NeoForge (1.21.1) library mod that defines a **Terminal Ballistics Damage Protocol Layer** for the Minecraft modding ecosystem.
+BallisticsFramework is a Forge (1.20.1) library mod providing a standardized **terminal ballistics damage protocol** for the Minecraft modding ecosystem.
 
 It serves as a compatibility protocol that multiple gun, vehicle, and armor mods can depend on together. Problems it solves:
 
@@ -31,9 +31,39 @@ The protocol's guiding principle is **wrap, don't replace** — it never bypasse
 ./gradlew build
 ```
 
-Output at `build/libs/ballistics_framework-1.21.1-1.0-SNAPSHOT.jar`.
+Output at `build/libs/ballistics_framework-1.20.1-forge-1.0.0.alpha.6.jar`.
 
-Dependency via flatDir local jar or source-set dependency; declare in `neoforge.mods.toml`.
+## Adding as a Dependency
+
+This library is published to a Maven repository. Add the following to your `build.gradle`:
+
+```groovy
+repositories {
+    maven {
+        url = "https://maven.sighs.cc/repository/maven-releases/"
+    }
+}
+
+dependencies {
+    implementation "io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.6"
+}
+```
+
+For `build.gradle.kts` (Kotlin DSL):
+
+```kotlin
+repositories {
+    maven {
+        url = uri("https://maven.sighs.cc/repository/maven-releases/")
+    }
+}
+
+dependencies {
+    implementation("io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.6")
+}
+```
+
+After syncing Gradle, all APIs are ready to use.
 
 ***
 

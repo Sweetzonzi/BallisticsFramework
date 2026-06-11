@@ -1,8 +1,8 @@
 # Ballistics Framework — 弹道框架
 
-![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green)
-![NeoForge](https://img.shields.io/badge/NeoForge-21.1.219-blue)
-![Java](https://img.shields.io/badge/Java-21-orange)
+![Minecraft](https://img.shields.io/badge/Minecraft-1.20.1-green)
+![Forge](https://img.shields.io/badge/Forge-47.4.0-orange)
+![Java](https://img.shields.io/badge/Java-17-orange)
 ![License](https://img.shields.io/badge/License-LGPL%203.0-blue)
 [![Wiki](https://img.shields.io/badge/Wiki-GitHub%20Pages-blue?logo=github)](https://sweetzonzi.github.io/BallisticsFramework/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Sweetzonzi/BallisticsFramework)
@@ -13,7 +13,7 @@
 
 ## 这是什么？
 
-BallisticsFramework 是一个 NeoForge（1.21.1）lib 模组，为 Minecraft 模组生态定义了一套 **终点弹道伤害协议层**。
+BallisticsFramework 是一个 Forge（1.20.1）lib 模组，为 Minecraft 模组生态定义了一套 **终点弹道伤害协议层**。
 
 核心定位是一个可供多个枪械、载具、护甲模组共同依赖的兼容协议。协议解决的问题：
 
@@ -31,9 +31,39 @@ BallisticsFramework 是一个 NeoForge（1.21.1）lib 模组，为 Minecraft 模
 ./gradlew build
 ```
 
-产物位于 `build/libs/ballistics_framework-1.21.1-1.0-SNAPSHOT.jar`。
+产物位于 `build/libs/ballistics_framework-1.20.1-forge-1.0.0.alpha.6.jar`。
 
-依赖方式：flatDir 本地 jar 或源集依赖，参照 `neoforge.mods.toml` 添加 dependency 声明。
+## 引入依赖
+
+本库发布在 Maven 仓库，在你的 `build.gradle` 中添加：
+
+```groovy
+repositories {
+    maven {
+        url = "https://maven.sighs.cc/repository/maven-releases/"
+    }
+}
+
+dependencies {
+    implementation "io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.6"
+}
+```
+
+若使用 `build.gradle.kts`（Kotlin DSL）：
+
+```kotlin
+repositories {
+    maven {
+        url = uri("https://maven.sighs.cc/repository/maven-releases/")
+    }
+}
+
+dependencies {
+    implementation("io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.6")
+}
+```
+
+添加后同步 Gradle 即可获得全部 API。
 
 ***
 

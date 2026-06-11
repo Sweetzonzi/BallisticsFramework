@@ -1,0 +1,41 @@
+// Maven 发布配置 — 将本库发布到远程 Maven 仓库
+// 敏感信息通过环境变量传入：
+//   $env:BALLISTICS_MAVEN_USER = "developer"
+//   $env:BALLISTICS_MAVEN_PASS = "你的密码"
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            from components.java
+            // Maven artifactId，包含 MC 版本和加载器信息
+            artifactId = "${mod_id}-${minecraft_version}-forge"
+            // 补充 pom 信息，方便其他项目引用
+            pom {
+                name = mod_name
+                description = mod_description
+                url = 'https://github.com/Sweetzonzi/BallisticsFramework'
+                licenses {
+                    license {
+                        name = mod_license
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'sweetzonzi'
+                        name = mod_authors
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            // 远程 Maven 仓库地址（Nexus，发布到 maven-releases）
+            url = "https://maven.sighs.cc/repository/maven-releases/"
+            credentials {
+                username = System.getenv("BALLISTICS_MAVEN_USER")
+                password = System.getenv("BALLISTICS_MAVEN_PASS")
+            }
+        }
+    }
+}

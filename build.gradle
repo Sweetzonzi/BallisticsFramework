@@ -14,7 +14,8 @@ repositories {
 }
 
 base {
-    archivesName = "${mod_id}-${minecraft_version}"
+    // Jar 文件名：ballistics_framework-1.20.1-forge-1.0.0.alpha.6.jar
+    archivesName = "${mod_id}-${minecraft_version}-forge"
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
@@ -88,19 +89,8 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
 
 sourceSets.main.resources.srcDir generateModMetadata
 
-// Maven 发布配置
-publishing {
-    publications {
-        register('mavenJava', MavenPublication) {
-            from components.java
-        }
-    }
-    repositories {
-        maven {
-            url "file://${project.projectDir}/repo"
-        }
-    }
-}
+// 发布配置独立到 publish.gradle
+apply from: 'publish.gradle'
 
 idea {
     module {
