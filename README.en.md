@@ -34,39 +34,9 @@ The protocol's guiding principle is **wrap, don't replace** — it never bypasse
 ./gradlew build
 ```
 
-Output at `build/libs/ballistics_framework-1.21.1-neoforge-1.0.0.alpha.6.jar`.
+Output at `build/libs/ballistics_framework-1.21.1-1.0-SNAPSHOT.jar`.
 
-## Adding as a Dependency
-
-This library is published to a Maven repository. Add the following to your `build.gradle`:
-
-```groovy
-repositories {
-    maven {
-        url = "https://maven.sighs.cc/repository/maven-releases/"
-    }
-}
-
-dependencies {
-    implementation "io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.6"
-}
-```
-
-For `build.gradle.kts` (Kotlin DSL):
-
-```kotlin
-repositories {
-    maven {
-        url = uri("https://maven.sighs.cc/repository/maven-releases/")
-    }
-}
-
-dependencies {
-    implementation("io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.6")
-}
-```
-
-After syncing Gradle, all APIs are ready to use.
+Dependency via flatDir local jar or source-set dependency; declare in `neoforge.mods.toml`.
 
 ***
 

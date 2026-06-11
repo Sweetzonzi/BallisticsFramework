@@ -7,13 +7,13 @@
 [![Wiki](https://img.shields.io/badge/Wiki-GitHub%20Pages-blue?logo=github)](https://sweetzonzi.github.io/BallisticsFramework/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Sweetzonzi/BallisticsFramework)
 
-[English](README.en.md)
+[English](README.en.md) | [Forge 1.20.1 版](https://github.com/Sweetzonzi/BallisticsFramework/tree/1.20.1-forge)
 
 ***
 
 ## 这是什么？
 
-BallisticsFramework 是一个 NeoForge（1.21.1）lib 模组，为 Minecraft 模组生态提供两大标准化能力：
+BallisticsFramework 是一个 NeoForge/Forge（1.21.1/1.20.1）lib 模组，为 Minecraft 模组生态提供两大标准化能力：
 
 - **终点弹道伤害协议** — 枪械、载具、护甲模组共同依赖的穿甲判定与伤害协商协议
 - **外弹道解算工具** — 弹道正解、瞄准反解、动目标提前量预测，双物理模型（MC 原版 & 二次阻力拟真）
@@ -48,7 +48,10 @@ repositories {
 }
 
 dependencies {
+    // NeoForge 1.21.1（本分支）
     implementation "io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.6"
+    // Forge 1.20.1（1.20.1-forge 分支）:
+    // implementation "io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.6"
 }
 ```
 
@@ -62,11 +65,14 @@ repositories {
 }
 
 dependencies {
+    // NeoForge 1.21.1（本分支）
     implementation("io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.6")
+    // Forge 1.20.1（1.20.1-forge 分支）:
+    // implementation("io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.6")
 }
 ```
 
-添加后同步 Gradle 即可获得全部 API。
+根据你的加载器选择对应的坐标，添加后同步 Gradle 即可获得全部 API。
 
 ***
 
