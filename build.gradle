@@ -13,7 +13,8 @@ repositories {
 }
 
 base {
-    archivesName = "${mod_id}-${minecraft_version}"
+    // Jar 文件名：ballistics_framework-1.21.1-neoforge-1.0.0.alpha.6.jar
+    archivesName = "${mod_id}-${minecraft_version}-neoforge"
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
@@ -139,19 +140,8 @@ sourceSets.main.resources.srcDir generateModMetadata
 // To avoid having to run "generateModMetadata" manually, make it run on every project reload
 neoForge.ideSyncTask generateModMetadata
 
-// Example configuration to allow publishing using the maven-publish plugin
-publishing {
-    publications {
-        register('mavenJava', MavenPublication) {
-            from components.java
-        }
-    }
-    repositories {
-        maven {
-            url "file://${project.projectDir}/repo"
-        }
-    }
-}
+// 发布配置独立到 publish.gradle
+apply from: 'publish.gradle'
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
 idea {
