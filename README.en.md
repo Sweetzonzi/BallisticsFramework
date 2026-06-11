@@ -57,7 +57,7 @@ For `build.gradle.kts` (Kotlin DSL):
 ```kotlin
 repositories {
     maven {
-        url = uri("https://maven.sighs.cc/")
+        url = uri("https://maven.sighs.cc/repository/maven-releases/")
     }
 }
 
