@@ -13,7 +13,7 @@
 
 ## What is This?
 
-BallisticsFramework is a NeoForge (1.21.1) library mod providing two standardized capabilities for the Minecraft modding ecosystem:
+BallisticsFramework is a NeoForge/Forge (1.21.1/1.20.1) library mod providing two standardized capabilities for the Minecraft modding ecosystem:
 
 - **Terminal Ballistics Damage Protocol** — a unified penetration adjudication and damage negotiation layer for gun, vehicle, and armor mods
 - **External Ballistics Solvers** — forward trajectory solving, firing angle inverse solving, and moving-target lead prediction with dual physics models (vanilla drag-multiplier & realistic quadratic drag)
