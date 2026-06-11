@@ -43,7 +43,7 @@ This library is published to a Maven repository. Add the following to your `buil
 ```groovy
 repositories {
     maven {
-        url = "https://maven.sighs.cc/"
+        url = "https://maven.sighs.cc/repository/maven-releases/"
     }
 }
 

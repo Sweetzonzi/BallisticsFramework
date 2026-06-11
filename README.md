@@ -43,7 +43,7 @@ BallisticsFramework 是一个 NeoForge（1.21.1）lib 模组，为 Minecraft 模
 ```groovy
 repositories {
     maven {
-        url = "https://maven.sighs.cc/"
+        url = "https://maven.sighs.cc/repository/maven-releases/"
     }
 }
 

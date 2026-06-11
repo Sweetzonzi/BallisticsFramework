@@ -30,8 +30,9 @@ publishing {
     }
     repositories {
         maven {
-            // 远程 Maven 仓库地址
-            url = "https://maven.sighs.cc/"
+            // 远程 Maven 仓库地址（Nexus，发布到 maven-releases）
+            // 可用仓库：maven-releases（发布版）、maven-snapshots（快照版）
+            url = "https://maven.sighs.cc/repository/maven-releases/"
             credentials {
                 username = System.getenv("BALLISTICS_MAVEN_USER")
                 password = System.getenv("BALLISTICS_MAVEN_PASS")
