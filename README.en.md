@@ -7,15 +7,18 @@
 [![Wiki](https://img.shields.io/badge/Wiki-GitHub%20Pages-blue?logo=github)](https://sweetzonzi.github.io/BallisticsFramework/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Sweetzonzi/BallisticsFramework)
 
-[中文版](README.md)
+[中文版](README.md) | [NeoForge Branch](https://github.com/Sweetzonzi/BallisticsFramework/tree/1.21.1-neoforge)
 
 ***
 
 ## What is This?
 
-BallisticsFramework is a Forge (1.20.1) library mod providing a standardized **terminal ballistics damage protocol** for the Minecraft modding ecosystem.
+BallisticsFramework is a NeoForge/Forge (1.21.1/1.20.1) library mod providing two standardized capabilities for the Minecraft modding ecosystem:
 
-It serves as a compatibility protocol that multiple gun, vehicle, and armor mods can depend on together. Problems it solves:
+- **Terminal Ballistics Damage Protocol** — a unified penetration adjudication and damage negotiation layer for gun, vehicle, and armor mods
+- **External Ballistics Solvers** — forward trajectory solving, firing angle inverse solving, and moving-target lead prediction with dual physics models (vanilla drag-multiplier & realistic quadratic drag)
+
+It serves as a common compatibility layer that multiple mods can depend on together. Problems it solves:
 
 - When a bullet hits armor, how do you pass high-dimensional info like **penetration, impact angle, and hit location**?
 - How does an armor mod use **hit normals and velocity vectors** for penetration slope correction?
@@ -45,7 +48,10 @@ repositories {
 }
 
 dependencies {
+    // Forge 1.20.1 (this branch)
     implementation "io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.6"
+    // NeoForge 1.21.1 (1.21.1-neoforge branch):
+    // implementation "io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.6"
 }
 ```
 
@@ -59,11 +65,14 @@ repositories {
 }
 
 dependencies {
+    // Forge 1.20.1 (this branch)
     implementation("io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.6")
+    // NeoForge 1.21.1 (1.21.1-neoforge branch):
+    // implementation("io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.6")
 }
 ```
 
-After syncing Gradle, all APIs are ready to use.
+Choose the coordinate matching your loader, then sync Gradle. All APIs are ready to use.
 
 ***
 
