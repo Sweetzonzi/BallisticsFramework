@@ -203,6 +203,22 @@ public final class BFArmorAdapter implements BFHurtTarget {
     }
 
     /**
+     * 触发已解析槽位的护甲物品的 {@link BFArmorMaterial#afterHurt} 回调。
+     * <p>
+     * 由 {@code BFDamageApi} 在护甲层管线末尾、实体 {@code hurt()} 之前调用。
+     * 兜底模式下同样委托给最高等级槽位的护甲物品。
+     *
+     * @param ctx         完整命中上下文
+     * @param result      穿甲结果
+     * @param finalDamage {@link #calculateFinalDamage} 计算出的最终伤害量
+     */
+    public void armorAfterHurt(BFDamageContext ctx, PenetrationResult result, float finalDamage) {
+        if (resolvedMaterial != null && resolvedSlot != null) {
+            resolvedMaterial.afterHurt(entity, resolvedSlot, ctx, result, finalDamage);
+        }
+    }
+
+    /**
      * 委托原始实体执行伤害。
      * <p>
      * 注意两层防护模型：此方法委托 {@code entity.hurt(source, amount)} 走原版伤害管线，

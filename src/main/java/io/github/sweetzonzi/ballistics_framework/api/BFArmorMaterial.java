@@ -169,6 +169,37 @@ public interface BFArmorMaterial {
     // ======================== 协议外伤害兼容（可选覆写） ========================
 
     /**
+     * 护甲层的穿甲判定和伤害削减完成后调用，在实体实际受到伤害之前触发。
+     * <p>
+     * 调用时序：{@link #calculateFinalDamage} → <b>{@code afterHurt}</b> → 实体 {@code hurt()}。
+     * 此时护甲职责已结束（已修正穿深、判定击穿、计算残余伤害），
+     * 但整体管线尚未走完，伤害尚未施加到实体。
+     * <p>
+     * 与 {@link #calculateFinalDamage} 的区别：{@code calculateFinalDamage} 是纯计算，
+     * 返回伤害数值；{@code afterHurt} 是副作用通知，在此处执行护甲被命中后的后效处理。
+     * <p>
+     * 默认空实现。护甲物品可覆写以执行：
+     * <ul>
+     *   <li>耐久损耗：通过 {@code wearer.getItemBySlot(slot)} 获取 ItemStack 后调用 {@code hurtAndBreak}</li>
+     *   <li>爆反消耗：标记 ItemStack 上的自定义组件表示爆反已触发</li>
+     *   <li>碎裂降级：替换 ItemStack 为降级后的护甲</li>
+     *   <li>统计追踪：在 ItemStack 的组件中记录命中次数/吸收伤害</li>
+     * </ul>
+     *
+     * @param wearer      穿戴此护甲的实体
+     * @param slot        命中槽位
+     * @param ctx         完整命中上下文
+     * @param result      穿甲结果（PENETRATED / BLOCKED / RICOCHET）
+     * @param finalDamage {@link #calculateFinalDamage} 计算出的最终伤害量
+     */
+    default void afterHurt(LivingEntity wearer, EquipmentSlot slot, BFDamageContext ctx,
+                           PenetrationResult result, float finalDamage) {
+        // 默认空实现
+    }
+
+    // ======================== 协议外伤害兼容（可选覆写） ========================
+
+    /**
      * 将原版伤害转换为协议上下文，供 Mixin 拦截使用。
      * <p>
      * 默认始终返回有效上下文（穿深 = 原版伤害量 / 2），意味着所有原版伤害

@@ -322,6 +322,9 @@ default PenetrationResult resolvePenetration(BFDamageContext ctx)
 // ④ 根据穿甲结果计算最终伤害。默认三级模型：越级 100%、同级 65%、未击穿/跳弹 0
 default float calculateFinalDamage(BFDamageContext ctx, PenetrationResult result)
 
+// ⑤ 伤害施加完成后的回调。提供完整上下文供后效处理（音效、粒子、技能触发等）
+default void afterHurt(BFDamageContext ctx, PenetrationResult result, float finalDamage)
+
 // ③的辅助方法。默认基于等级比较（>=，等于算击穿）
 default boolean isArmorPenetrated(BFDamageContext ctx)
 
@@ -366,6 +369,11 @@ default PenetrationResult resolvePenetration(EquipmentSlot slot, BFDamageContext
 // 根据穿甲结果计算此槽位护甲的最终伤害量。默认三级模型：越级100%/同级65%/未击穿0
 default float calculateFinalDamage(EquipmentSlot slot, BFDamageContext ctx,
                                     PenetrationResult result)
+
+// 护甲层职责完成后的回调。此时穿甲判定和伤害削减已结束，实体尚未实际受伤害。
+// 用于耐久损耗、爆反消耗、碎裂降级等后效
+default void afterHurt(LivingEntity wearer, EquipmentSlot slot, BFDamageContext ctx,
+                        PenetrationResult result, float finalDamage)
 ```
 
 ### Default 方法（槽位映射，可选覆写）
