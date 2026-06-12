@@ -34,7 +34,7 @@ BallisticsFramework 是一个 NeoForge/Forge（1.21.1/1.20.1）lib 模组，为 
 ./gradlew build
 ```
 
-产物位于 `build/libs/ballistics_framework-1.20.1-forge-1.0.0.alpha.6.jar`。
+产物位于 `build/libs/ballistics_framework-<mc版本>-<加载器>-<版本>.jar`。
 
 ## 引入依赖
 
@@ -48,10 +48,10 @@ repositories {
 }
 
 dependencies {
-    // Forge 1.20.1（本分支）
-    implementation "io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.6"
-    // NeoForge 1.21.1（1.21.1-neoforge 分支）:
-    // implementation "io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.6"
+    // 根据你的加载器选择对应坐标
+    implementation "io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.7"
+    // 或
+    // implementation "io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.7"
 }
 ```
 
@@ -65,10 +65,10 @@ repositories {
 }
 
 dependencies {
-    // Forge 1.20.1（本分支）
-    implementation("io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.6")
-    // NeoForge 1.21.1（1.21.1-neoforge 分支）:
-    // implementation("io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.6")
+    // 根据你的加载器选择对应坐标
+    implementation("io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.7")
+    // 或
+    // implementation("io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.7")
 }
 ```
 
