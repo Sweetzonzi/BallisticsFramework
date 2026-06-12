@@ -66,6 +66,8 @@ public final class BFDamageApi {
                 float residualPen = adapter.modifyPenetration(ctx);
                 PenetrationResult armorResult = adapter.resolvePenetration(ctx);
                 float residualDmg = adapter.calculateFinalDamage(ctx, armorResult);
+                // 护甲层 afterHurt（在 callFinalDmg 之后、hurt 之前触发）
+                adapter.armorAfterHurt(ctx, armorResult, residualDmg);
 
                 // 构造子上下文——未击穿/跳弹时穿深传 0 表示仅钝伤
                 float childPen = armorResult == PenetrationResult.PENETRATED
@@ -77,6 +79,8 @@ public final class BFDamageApi {
                 float finalDmg = bfTarget.calculateFinalDamage(childCtx, entityResult);
                 boolean success = bfTarget.hurt(ctx.source(), finalDmg);
                 float dealt = success ? finalDmg : 0f;
+                // 本体层 afterHurt
+                bfTarget.afterHurt(childCtx, entityResult, finalDmg);
 
                 // 回调在本体层的最终结果上触发
                 if (handler != null) {
@@ -91,6 +95,8 @@ public final class BFDamageApi {
                 float finalDmg = bfTarget.calculateFinalDamage(ctx, result);
                 boolean success = bfTarget.hurt(ctx.source(), finalDmg);
                 float dealt = success ? finalDmg : 0f;
+                // 实体本体 afterHurt
+                bfTarget.afterHurt(ctx, result, finalDmg);
 
                 if (handler != null) {
                     triggerCallbacks(handler, bfTarget, ctx, result);
@@ -102,6 +108,8 @@ public final class BFDamageApi {
                 BFArmorAdapter adapter = new BFArmorAdapter(living);
                 PenetrationResult result = adapter.resolvePenetration(ctx);
                 float finalDmg = adapter.calculateFinalDamage(ctx, result);
+                // 护甲层 afterHurt（在 hurt 之前触发）
+                adapter.armorAfterHurt(ctx, result, finalDmg);
                 boolean success = adapter.hurt(ctx.source(), finalDmg);
                 float dealt = success ? finalDmg : 0f;
 

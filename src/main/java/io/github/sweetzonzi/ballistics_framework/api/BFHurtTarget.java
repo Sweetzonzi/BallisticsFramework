@@ -134,6 +134,27 @@ public interface BFHurtTarget {
     boolean hurt(DamageSource source, float amount);
 
     /**
+     * 被命中后的回调，在 {@link #hurt} 执行完毕后调用。
+     * <p>
+     * 与 {@link #hurt} 的职责区分：
+     * <ul>
+     *   <li>{@code hurt} — 执行实际的伤害施加，签名只有 {@code (DamageSource, float)}，
+     *       是必要的原版兼容接口</li>
+     *   <li>{@code afterHurt} — 伤害已执行完毕，提供完整上下文供后效处理。
+     *       可在此方法中调用 {@link BFDamageApi#getContextFor(Object)} 获取命中几何信息，
+     *       实现命中点音效、粒子、触发技能等效果</li>
+     * </ul>
+     * 默认空实现。
+     *
+     * @param ctx         完整命中上下文
+     * @param result      穿甲结果（PENETRATED / BLOCKED / RICOCHET）
+     * @param finalDamage {@link #calculateFinalDamage} 计算出的最终伤害量
+     */
+    default void afterHurt(BFDamageContext ctx, PenetrationResult result, float finalDamage) {
+        // 默认空实现
+    }
+
+    /**
      * 获取此协议伤害目标对应的实体引用。
      * <p>
      * 必须优先返回非 null 的实体引用以配合上下文栈 target 选取规则——
