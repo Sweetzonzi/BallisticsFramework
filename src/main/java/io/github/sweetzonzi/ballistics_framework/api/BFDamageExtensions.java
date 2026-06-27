@@ -57,17 +57,17 @@ public final class BFDamageExtensions {
      * {@link BFDamageHandler#isSpall} 在回调阶段动态判定。
      */
     public static final BFDamageExtensionKey<Float> FUSE_DELAY =
-            register(new ResourceLocation("ballistics_framework", "fuse_delay"),
+            register(ResourceLocation.fromNamespaceAndPath("ballistics_framework", "fuse_delay"),
                     Float.class, () -> 0f);
 
     /** 弹体口径（m），默认 0.1（100mm，典型坦克炮口径） */
     public static final BFDamageExtensionKey<Float> CALIBER =
-            register(new ResourceLocation("ballistics_framework", "caliber"),
+            register(ResourceLocation.fromNamespaceAndPath("ballistics_framework", "caliber"),
                     Float.class, () -> 0.1f);
 
     /** 弹体质量（kg），默认 10（典型坦克炮穿甲弹质量） */
     public static final BFDamageExtensionKey<Float> MASS =
-            register(new ResourceLocation("ballistics_framework", "mass"),
+            register(ResourceLocation.fromNamespaceAndPath("ballistics_framework", "mass"),
                     Float.class, () -> 10f);
 
     /**
