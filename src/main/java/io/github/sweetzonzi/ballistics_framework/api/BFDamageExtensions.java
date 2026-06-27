@@ -70,6 +70,22 @@ public final class BFDamageExtensions {
             register(ResourceLocation.fromNamespaceAndPath("ballistics_framework", "mass"),
                     Float.class, () -> 10f);
 
+    /**
+     * 命中时传递至目标的冲量标量（N·s，即 kg·m/s）。
+     * <p>
+     * 表示弹头因穿透/拦截损失而转移给目标的动量大小。
+     * 方向由 {@link BFDamageContext#hitVelocity()} 归一化后提供，此处仅存标量。
+     * <ul>
+     *   <li>穿透：{@code mass × (impactSpeed - residualSpeed)}，部分动量转移</li>
+     *   <li>拦截/击毁：{@code mass × impactSpeed}，全部动量转移</li>
+     *   <li>跳弹：转移量较小，视反射速度而定</li>
+     * </ul>
+     * 默认 0，表示无额外冲量（接收方应回退到自有的击退估算）。
+     */
+    public static final BFDamageExtensionKey<Float> IMPULSE =
+            register(ResourceLocation.fromNamespaceAndPath("ballistics_framework", "impulse"),
+                    Float.class, () -> 0f);
+
     // ======================== 实例方法 ========================
 
     private final Map<BFDamageExtensionKey<?>, Object> data = new HashMap<>();
@@ -123,6 +139,20 @@ public final class BFDamageExtensions {
             return (T) data.get(key);
         }
         return key.getDefaultValue();
+    }
+
+    /**
+     * 检查扩展值是否已被显式设置（与 {@link #get} 不同，不会退回默认值）。
+     * <p>
+     * 用于区分"未设置（应回退默认行为）"与"显式设为默认值（应遵循显式意图）"。
+     * 例如 IMPULSE 默认 0——未设置时接收方使用自有击退公式，显式设为 0 时表示明确不施加击退。
+     *
+     * @param key 扩展 key
+     * @return true 表示已通过 {@link #set} 显式写入过值（即使值为默认值）
+     */
+    public boolean contains(BFDamageExtensionKey<?> key) {
+        Objects.requireNonNull(key);
+        return data.containsKey(key);
     }
 
     /**
