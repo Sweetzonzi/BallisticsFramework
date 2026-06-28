@@ -35,7 +35,7 @@ public class BallisticsGameTest {
 
     private static final float EPSILON = 0.01f;
     private static final ResourceLocation ARENA_ID =
-            new ResourceLocation("ballistics_framework", "empty_arena");
+            ResourceLocation.fromNamespaceAndPath("ballistics_framework", "empty_arena");
 
     // ======================== 场景1：近战武器裸打靶子 ========================
 

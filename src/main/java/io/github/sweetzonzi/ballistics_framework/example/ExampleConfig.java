@@ -54,6 +54,7 @@ public final class ExampleConfig {
      * <p>
      * Forge 1.20.1 使用 {@link ModLoadingContext#registerConfig} 注册配置。
      */
+    @SuppressWarnings("removal")
     public static void register() {
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, SPEC);
     }

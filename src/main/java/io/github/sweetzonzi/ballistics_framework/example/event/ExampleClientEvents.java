@@ -29,7 +29,7 @@ public final class ExampleClientEvents {
 
     /** 靶子实体纹理：复用原版僵尸纹理 */
     private static final ResourceLocation TARGET_TEXTURE =
-            new ResourceLocation("textures/entity/zombie/zombie.png");
+            ResourceLocation.withDefaultNamespace("textures/entity/zombie/zombie.png");
 
     private ExampleClientEvents() {}
 
