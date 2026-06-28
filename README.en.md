@@ -1,13 +1,13 @@
 # Ballistics Framework — A Ballistics Damage Protocol Layer
 
-![Minecraft](https://img.shields.io/badge/Minecraft-1.20.1-green)
-![Forge](https://img.shields.io/badge/Forge-47.4.0-orange)
-![Java](https://img.shields.io/badge/Java-17-orange)
+![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green)
+![NeoForge](https://img.shields.io/badge/NeoForge-21.1.219-blue)
+![Java](https://img.shields.io/badge/Java-21-orange)
 ![License](https://img.shields.io/badge/License-LGPL%203.0-blue)
 [![Wiki](https://img.shields.io/badge/Wiki-GitHub%20Pages-blue?logo=github)](https://sweetzonzi.github.io/BallisticsFramework/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Sweetzonzi/BallisticsFramework)
 
-[中文版](README.md) | [NeoForge Branch](https://github.com/Sweetzonzi/BallisticsFramework/tree/1.21.1-neoforge)
+[中文版](README.md)
 
 ***
 
@@ -34,45 +34,9 @@ The protocol's guiding principle is **wrap, don't replace** — it never bypasse
 ./gradlew build
 ```
 
-Output at `build/libs/ballistics_framework-1.20.1-forge-1.0.0.alpha.6.jar`.
+Output at `build/libs/ballistics_framework-1.21.1-neoforge-1.0.0.alpha.9.jar`.
 
-## Adding as a Dependency
-
-This library is published to a Maven repository. Add the following to your `build.gradle`:
-
-```groovy
-repositories {
-    maven {
-        url = "https://maven.sighs.cc/repository/maven-releases/"
-    }
-}
-
-dependencies {
-    // Forge 1.20.1 (this branch)
-    implementation "io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.6"
-    // NeoForge 1.21.1 (1.21.1-neoforge branch):
-    // implementation "io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.6"
-}
-```
-
-For `build.gradle.kts` (Kotlin DSL):
-
-```kotlin
-repositories {
-    maven {
-        url = uri("https://maven.sighs.cc/repository/maven-releases/")
-    }
-}
-
-dependencies {
-    // Forge 1.20.1 (this branch)
-    implementation("io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.6")
-    // NeoForge 1.21.1 (1.21.1-neoforge branch):
-    // implementation("io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.6")
-}
-```
-
-Choose the coordinate matching your loader, then sync Gradle. All APIs are ready to use.
+Dependency via flatDir local jar or source-set dependency; declare in `neoforge.mods.toml`.
 
 ***
 
@@ -97,7 +61,7 @@ If the target implements `BFHurtTarget`, the full penetration pipeline runs auto
 
 ### Weapon Mod — Protocol Damage with Callbacks
 
-To receive hit results (penetration/ricochet/spall/overmatch), implement `BFDamageHandler` and use `dealDamage()`:
+To receive hit results (penetration/ricochet/spall/overmatch), implement `BFDamageHandler` and use `dealDamage()`. Callbacks fire in two phases — `before*` (visual feedback, pre-damage) and `on*` (post-effects, post-damage):
 
 ```java
 public class MyWeapon implements BFDamageHandler {
@@ -109,31 +73,33 @@ public class MyWeapon implements BFDamageHandler {
         float dealt = this.dealDamage(target, ctx);  // auto-injects self as handler
     }
 
-    // Override as needed; all default to no-op
+    // ===== Before-damage callbacks: visual feedback (before damage number) =====
 
     @Override
-    public void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {
+    public void beforePenetrated(BFHurtTarget target, BFDamageContext ctx) {
         spawnPenEffects(ctx.hitPoint());
     }
 
     @Override
-    public void onBlocked(BFHurtTarget target, BFDamageContext ctx) {
+    public void beforeBlocked(BFHurtTarget target, BFDamageContext ctx) {
         spawnSparkEffects(ctx.hitPoint());
     }
 
     @Override
-    public void onRicochet(BFHurtTarget target, BFDamageContext ctx) {
+    public void beforeRicochet(BFHurtTarget target, BFDamageContext ctx) {
         playRicochetSound(ctx.hitPoint());
     }
 
+    // ===== After-damage callbacks: post-effects =====
+
     @Override
-    public void onOvermatch(BFHurtTarget target, BFDamageContext ctx) {
-        // Overmatch (full over-penetration) — projectile passes through intact
+    public void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {
+        penetrationStats.recordHit(target, ctx);
     }
 
     @Override
     public void onSpall(BFHurtTarget target, BFDamageContext ctx) {
-        // Spall/fragmentation — projectile shatters
+        spawnFragmentBullets(ctx.hitPoint(), ctx.hitNormal(), 4);
     }
 }
 ```
@@ -200,6 +166,66 @@ public float calculateFinalDamage(BFDamageContext ctx, PenetrationResult result)
 
 ***
 
+## Trajectory Solving
+
+The framework includes external ballistics solvers covering the full flight phase from launch to impact. Choose the model based on projectile physics:
+
+| Projectile Type | Solver | Input Units |
+|-----------------|--------|:---:|
+| Vanilla projectiles (arrows, snowballs, fireballs, etc.) | `MinecraftTrajectory` | m/tick |
+| Custom quadratic-drag projectiles | `RealisticTrajectory` | m/s |
+
+All classes in `api.trajectory` sub-package. Methods are `static` and thread-safe.
+
+### Forward Solve — Trajectory Simulation
+
+```java
+// Vanilla arrow trajectory
+TrajectoryResult traj = MinecraftTrajectory.arrowTrajectory(
+    arrowEntity.position(), arrowEntity.getDeltaMovement(), 100);
+
+// Realistic model — 120mm tank cannon APFSDS
+BallisticConfig config = BallisticConfig.fromExtensions(exts, 0.35f, 0.8f, 0.05f, 200);
+TrajectoryResult traj = RealisticTrajectory.forwardSolve(
+    shooterPos, new Vec3(0, 0, 1500), config, DensityFunction.MC_OVERWORLD);
+
+// Results feed directly into the terminal ballistics context
+BFDamageContext hitCtx = BFDamageContext.builder()
+    .source(src).baseDamage(500f)
+    .hitPoint(traj.terminalPoint())         // impact point
+    .hitVelocity(traj.terminalVelocity())   // terminal velocity (m/s), direct pass
+    .build();
+```
+
+### Firing Angle — AI Turret Aiming
+
+```java
+// Vanilla arrow firing angle — one-liner
+List<FiringSolution> solutions = MinecraftTrajectory.arrowFiringAngle(
+    turretPos, targetPos, 6.0f, turretVelocity, 200);
+
+if (!solutions.isEmpty()) {
+    FiringSolution sol = solutions.get(0);       // low arc solution
+    arrowEntity.setDeltaMovement(
+        sol.direction().scale(6.0f).add(turretVelocity));
+}
+```
+
+Returns two solutions (low arc + high arc) when velocity is sufficient; one at critical velocity; empty when insufficient.
+
+### Moving Target Lead
+
+```java
+// Arrow lead prediction against a moving player
+FiringSolution lead = MinecraftTrajectory.arrowWithLead(
+    shooterPos, targetPos, targetVel, Vec3.ZERO,
+    speed, shooterVel, 200);
+```
+
+The solver first extrapolates using `distance / speed`, then iterates to convergence — typically 2–4 rounds.
+
+***
+
 ## Advanced Usage
 
 ### Overridable Pipeline Methods
@@ -263,6 +289,8 @@ public static final BFDamageExtensionKey<HitBox> HIT_BOX =
 
 ### All SI Units
 
+Trajectory solver outputs share SI units with terminal ballistics fields:
+
 | Field | Unit | Description |
 |-------|------|-------------|
 | `hitVelocity` | m/s | Impact velocity vector |
@@ -270,12 +298,22 @@ public static final BFDamageExtensionKey<HitBox> HIT_BOX =
 | `FUSE_DELAY` | s | Fuse delay |
 | `CALIBER` | m | Projectile caliber |
 | `MASS` | kg | Projectile mass |
+| `TrajectoryResult.terminalVelocity()` | m/s | Solver terminal velocity (matches `hitVelocity` — direct pass) |
+| `RealisticTrajectory` all inputs | SI | m/s, kg, m, m/s² |
 
 ***
 
 ## Architecture Overview
 
 ```
+                         External Ballistics (api.trajectory/)    Terminal Ballistics (api/)
+                  ┌─────────────────────────┐      ┌──────────────────┐
+                  │ forwardSolve             │ ───→ │ penetration check │
+                  │ solveFiringAngle          │ ctx  │ damage calc       │
+                  │ solveWithLead             │      │ callbacks         │
+                  └─────────────────────────┘      └──────────────────┘
+                       projectile in flight              moment of impact
+
 BFDamageApi.hurt(target, ctx)          ← weapon mod entry
     │
     ├── target instanceof BFHurtTarget
@@ -283,14 +321,16 @@ BFDamageApi.hurt(target, ctx)          ← weapon mod entry
     │     ├── target.modifyPenetration(ctx)     ← modifier (ERA, slope)
     │     ├── target.resolvePenetration(ctx)    ← PENETRATED/BLOCKED/RICOCHET
     │     ├── target.calculateFinalDamage(ctx, result) ← final damage
+    │     ├── triggerBeforeCallbacks           ← before* callbacks (pre-damage)
     │     ├── target.hurt(source, finalDmg)     ← execute damage
-    │     └── if (handler != null) → triggerCallbacks  ← callbacks
+    │     ├── target.afterHurt(ctx, result, finalDmg)
+    │     └── triggerCallbacks                 ← on* callbacks (post-damage)
     │
     └── target instanceof LivingEntity
           └── living.hurt(source, baseDamage)   ← vanilla fallback
 ```
 
-Only the `api/` package is exposed to consumers; internal implementations live in the `internal/` package.
+Only the `api/` and `api/trajectory/` packages are exposed to consumers; internal implementations live in the `internal/` package.
 
 ***
 

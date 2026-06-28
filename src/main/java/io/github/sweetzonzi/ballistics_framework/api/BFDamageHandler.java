@@ -10,7 +10,7 @@ import net.minecraft.world.entity.Entity;
  * <p>
  * 职责：
  * <ul>
- *   <li>接收管线执行后的事件回调（击穿/未击穿/跳弹/超匹配(碾压)/破片/普通实体命中）</li>
+ *   <li>接收管线执行前/后的事件回调（击穿/未击穿/跳弹/超匹配(碾压)/破片/普通实体命中）</li>
  *   <li>通过 {@link #isOvermatch} / {@link #isSpall} 的默认实现，
  *       向协议层声明是否应触发超匹配(碾压)与破片回调；实现者可覆写以完全控制条件</li>
  *   <li>向护甲侧提供伤害来源的元信息（护甲侧通过
@@ -18,16 +18,66 @@ import net.minecraft.world.entity.Entity;
  * </ul>
  * <p>
  * 所有回调方法的默认实现均为空操作，实现者按需覆写。
+ * 回调分为两类：
+ * <ul>
+ *   <li><b>伤害前回调</b>（{@code before*}）：穿甲判定完成、最终伤害已计算后，
+ *       在 {@code hurt()} 执行<b>之前</b>触发。适合播放命中特效、生成粒子等</li>
+ *   <li><b>伤害后回调</b>（{@code on*}）：伤害执行<b>之后</b>触发。
+ *       适合记录伤害统计、后效处理等</li>
+ * </ul>
  * {@link #onPenetrated}、{@link #onBlocked}、{@link #onRicochet} 三个主结果回调
  * 由 {@link PenetrationResult} 决定；{@link #onOvermatch} 和 {@link #onSpall}
  * 仅由对应的 {@link #isOvermatch} / {@link #isSpall} 返回值决定。
  * {@link #onNormalEntityHit} 仅在目标为普通 Entity（非协议感知）时触发。
  * <p>
- * 回调在 {@link BFDamageApi#hurt} 的管线末尾、伤害执行之后、上下文栈出栈之前触发。
+ * 回调在 {@link BFDamageApi#hurt} 的管线内、上下文栈出栈之前触发。
  */
 public interface BFDamageHandler {
 
-    // ==================== 事件回调 ====================
+    // ==================== 伤害前回调（穿甲判定后、伤害执行前） ====================
+
+    /** 击穿前回调。穿甲判定为击穿、伤害执行前触发 */
+    default void beforePenetrated(BFHurtTarget target, BFDamageContext ctx) {}
+
+    /** 未击穿前回调（含钝伤等）。穿甲判定为阻挡、伤害执行前触发 */
+    default void beforeBlocked(BFHurtTarget target, BFDamageContext ctx) {}
+
+    /** 跳弹前回调。穿甲判定为跳弹、伤害执行前触发 */
+    default void beforeRicochet(BFHurtTarget target, BFDamageContext ctx) {}
+
+    /**
+     * 超匹配(碾压)前回调。
+     * <p>
+     * 仅在 {@link #isOvermatch} 返回 true 时触发。
+     * 穿深远超装甲厚度——弹体"碾压"装甲，不发生碎裂。
+     * 伤害执行前触发。
+     */
+    default void beforeOvermatch(BFHurtTarget target, BFDamageContext ctx) {}
+
+    /**
+     * 破片前回调。
+     * <p>
+     * 仅在 {@link #isSpall} 返回 true 时触发。
+     * 默认未击穿或击穿但非超匹配(碾压)时，弹体碎裂产生破片。
+     * 伤害执行前触发。
+     */
+    default void beforeSpall(BFHurtTarget target, BFDamageContext ctx) {}
+
+    /**
+     * 普通实体命中前回调（目标未实现协议感知）。
+     * <p>
+     * 仅在目标为普通 {@link Entity}（非 {@link BFHurtTarget}、非
+     * {@code LivingEntity + BFArmorMaterial} 适配路径）时触发。
+     * 此时协议不做穿甲判定，在调用原版 {@link Entity#hurt} 之前触发。
+     *
+     * @param entity     被命中的普通实体
+     * @param ctx        命中上下文（穿深等字段虽存在但未被使用）
+     * @param baseDamage 即将传入原版 hurt 的原始伤害量（等同于 ctx.baseDamage()）
+     */
+    default void beforeNormalEntityHit(Entity entity, BFDamageContext ctx,
+                                       float baseDamage) {}
+
+    // ==================== 伤害后回调（伤害执行后） ====================
 
     /** 击穿回调。伤害已执行后触发 */
     default void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {}

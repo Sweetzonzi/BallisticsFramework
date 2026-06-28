@@ -1,13 +1,13 @@
 # Ballistics Framework — 弹道框架
 
-![Minecraft](https://img.shields.io/badge/Minecraft-1.20.1-green)
-![Forge](https://img.shields.io/badge/Forge-47.4.0-orange)
-![Java](https://img.shields.io/badge/Java-17-orange)
+![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green)
+![NeoForge](https://img.shields.io/badge/NeoForge-21.1.219-blue)
+![Java](https://img.shields.io/badge/Java-21-orange)
 ![License](https://img.shields.io/badge/License-LGPL%203.0-blue)
 [![Wiki](https://img.shields.io/badge/Wiki-GitHub%20Pages-blue?logo=github)](https://sweetzonzi.github.io/BallisticsFramework/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Sweetzonzi/BallisticsFramework)
 
-[English](README.en.md) | [NeoForge 版](https://github.com/Sweetzonzi/BallisticsFramework/tree/1.21.1-neoforge)
+[English](README.en.md) | [Forge 1.20.1 版](https://github.com/Sweetzonzi/BallisticsFramework/tree/1.20.1-forge)
 
 ***
 
@@ -34,7 +34,7 @@ BallisticsFramework 是一个 NeoForge/Forge（1.21.1/1.20.1）lib 模组，为 
 ./gradlew build
 ```
 
-产物位于 `build/libs/ballistics_framework-<mc版本>-<加载器>-<版本>.jar`。
+产物位于 `build/libs/ballistics_framework-1.21.1-neoforge-1.0.0.alpha.9.jar`。
 
 ## 引入依赖
 
@@ -48,10 +48,10 @@ repositories {
 }
 
 dependencies {
-    // 根据你的加载器选择对应坐标
-    implementation "io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.7"
-    // 或
-    // implementation "io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.7"
+    // NeoForge 1.21.1（本分支）
+    implementation "io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.9"
+    // Forge 1.20.1（1.20.1-forge 分支）:
+    // implementation "io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.9"
 }
 ```
 
@@ -65,10 +65,10 @@ repositories {
 }
 
 dependencies {
-    // 根据你的加载器选择对应坐标
-    implementation("io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.7")
-    // 或
-    // implementation("io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.7")
+    // NeoForge 1.21.1（本分支）
+    implementation("io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.9")
+    // Forge 1.20.1（1.20.1-forge 分支）:
+    // implementation("io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.9")
 }
 ```
 
@@ -97,7 +97,7 @@ float dealt = BFDamageApi.hurt(target, ctx);
 
 ### 武器模组——带回调的协议伤害
 
-需要接收命中结果（击穿/跳弹/破片等）时，实现 `BFDamageHandler` 接口，通过 `dealDamage()` 发起伤害：
+需要接收命中结果（击穿/跳弹/破片等）时，实现 `BFDamageHandler` 接口，通过 `dealDamage()` 发起伤害。回调分为伤害前（`before*`，用于视觉反馈）和伤害后（`on*`，用于后效处理）两个阶段：
 
 ```java
 public class MyWeapon implements BFDamageHandler {
@@ -109,31 +109,33 @@ public class MyWeapon implements BFDamageHandler {
         float dealt = this.dealDamage(target, ctx);  // 自动注入自身为 handler
     }
 
-    // 以下回调按需覆写，默认空操作
+    // ===== 伤害前回调：命中特效（伤害数字弹出前） =====
 
     @Override
-    public void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {
+    public void beforePenetrated(BFHurtTarget target, BFDamageContext ctx) {
         spawnPenEffects(ctx.hitPoint());
     }
 
     @Override
-    public void onBlocked(BFHurtTarget target, BFDamageContext ctx) {
+    public void beforeBlocked(BFHurtTarget target, BFDamageContext ctx) {
         spawnSparkEffects(ctx.hitPoint());
     }
 
     @Override
-    public void onRicochet(BFHurtTarget target, BFDamageContext ctx) {
+    public void beforeRicochet(BFHurtTarget target, BFDamageContext ctx) {
         playRicochetSound(ctx.hitPoint());
     }
 
+    // ===== 伤害后回调：后效处理 =====
+
     @Override
-    public void onOvermatch(BFHurtTarget target, BFDamageContext ctx) {
-        // 超匹配（碾压）——弹体完整穿透，不碎裂
+    public void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {
+        penetrationStats.recordHit(target, ctx);
     }
 
     @Override
     public void onSpall(BFHurtTarget target, BFDamageContext ctx) {
-        // 破片——弹体碎裂，产生二次杀伤
+        spawnFragmentBullets(ctx.hitPoint(), ctx.hitNormal(), 4);
     }
 }
 ```
@@ -198,6 +200,66 @@ public float calculateFinalDamage(BFDamageContext ctx, PenetrationResult result)
     };
 }
 ```
+
+***
+
+## 弹道解算
+
+框架内置外弹道解算器，覆盖"发射 → 命中"的完整飞行阶段。根据弹丸物理类型选择模型：
+
+| 弹丸类型 | 模型 | 入参单位 |
+|---------|------|:---:|
+| 原版弹射物（箭、雪球、火球等）| `MinecraftTrajectory` | m/tick |
+| 自定义二次阻力弹丸 | `RealisticTrajectory` | m/s |
+
+产物位于 `api.trajectory` 子包，所有方法 `static`、线程安全。
+
+### 正解 — 算弹丸轨迹
+
+```java
+// MC 原版箭矢正解
+TrajectoryResult traj = MinecraftTrajectory.arrowTrajectory(
+    arrowEntity.position(), arrowEntity.getDeltaMovement(), 100);
+
+// 拟真模型正解 — 120mm 坦克炮
+BallisticConfig config = BallisticConfig.fromExtensions(exts, 0.35f, 0.8f, 0.05f, 200);
+TrajectoryResult traj = RealisticTrajectory.forwardSolve(
+    shooterPos, new Vec3(0, 0, 1500), config, DensityFunction.MC_OVERWORLD);
+
+// 正解结果直传终点弹道上下文
+BFDamageContext hitCtx = BFDamageContext.builder()
+    .source(src).baseDamage(500f)
+    .hitPoint(traj.terminalPoint())         // 弹丸最终位置
+    .hitVelocity(traj.terminalVelocity())   // 末速 m/s，直传
+    .build();
+```
+
+### 反解 — AI 炮塔自动瞄准
+
+```java
+// MC 原版箭矢反解，一行调用
+List<FiringSolution> solutions = MinecraftTrajectory.arrowFiringAngle(
+    turretPos, targetPos, 6.0f, turretVelocity, 200);
+
+if (!solutions.isEmpty()) {
+    FiringSolution sol = solutions.get(0);       // 平射解
+    arrowEntity.setDeltaMovement(                // 直接设为弹丸速度方向
+        sol.direction().scale(6.0f).add(turretVelocity));
+}
+```
+
+初速充足时返回两个解（平射 + 高抛），临界初速时返回一个，初速不足时返回空列表。
+
+### 动目标提前量
+
+```java
+// 箭矢对移动玩家预测提前量
+FiringSolution lead = MinecraftTrajectory.arrowWithLead(
+    shooterPos, targetPos, targetVel, Vec3.ZERO,
+    speed, shooterVel, 200);
+```
+
+解算器用 `distance/speed` 做首次粗略外推后再迭代微调，2~4 轮收敛。
 
 ***
 
@@ -266,19 +328,31 @@ public static final BFDamageExtensionKey<HitBox> HIT_BOX =
 
 ### 全部使用国际单位制
 
-| 字段            | 单位  | 说明          |
-| ------------- | --- | ----------- |
-| `hitVelocity` | m/s | 命中速度矢量      |
-| `penetration` | mm  | 垂直 RHA 等效穿深 |
-| `FUSE_DELAY`  | s   | 引信延迟        |
-| `CALIBER`     | m   | 弹体口径        |
-| `MASS`        | kg  | 弹体质量        |
+外弹道解算器输出与终点弹道字段共用统一的 SI 单位：
+
+| 字段 | 单位 | 说明 |
+|------|------|------|
+| `hitVelocity` | m/s | 命中速度矢量 |
+| `penetration` | mm | 垂直 RHA 等效穿深 |
+| `FUSE_DELAY` | s | 引信延迟 |
+| `CALIBER` | m | 弹体口径 |
+| `MASS` | kg | 弹体质量 |
+| `TrajectoryResult.terminalVelocity()` | m/s | 外弹道末速（与 `hitVelocity` 一致，直传） |
+| `RealisticTrajectory` 全部入参 | SI | m/s, kg, m, m/s² |
 
 ***
 
 ## 架构概要
 
 ```
+                            外弹道（api.trajectory/）              终点弹道（api/）
+                      ┌─────────────────────────┐      ┌──────────────────┐
+                      │ 正解 forwardSolve        │ ───→ │ 穿甲判定           │
+                      │ 反解 solveFiringAngle    │ ctx  │ 伤害计算           │
+                      │ 提前量 solveWithLead     │      │ 回调触发           │
+                      └─────────────────────────┘      └──────────────────┘
+                          子弹飞行中                      命中瞬间
+
 BFDamageApi.hurt(target, ctx)          ← 武器模组入口
     │
     ├── target instanceof BFHurtTarget
@@ -293,7 +367,7 @@ BFDamageApi.hurt(target, ctx)          ← 武器模组入口
           └── living.hurt(source, baseDamage)   ← 直接原版
 ```
 
-对外只暴露 `api/` 包，内部实现位于 `internal/` 包。
+对外只暴露 `api/` 和 `api/trajectory/` 包，内部实现位于 `internal/` 包。
 
 ***
 
