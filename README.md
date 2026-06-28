@@ -34,7 +34,7 @@ BallisticsFramework 是一个 NeoForge/Forge（1.21.1/1.20.1）lib 模组，为 
 ./gradlew build
 ```
 
-产物位于 `build/libs/ballistics_framework-1.21.1-neoforge-1.0.0.alpha.7.jar`。
+产物位于 `build/libs/ballistics_framework-1.21.1-neoforge-1.0.0.alpha.9.jar`。
 
 ## 引入依赖
 
@@ -49,9 +49,9 @@ repositories {
 
 dependencies {
     // NeoForge 1.21.1（本分支）
-    implementation "io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.7"
+    implementation "io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.9"
     // Forge 1.20.1（1.20.1-forge 分支）:
-    // implementation "io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.7"
+    // implementation "io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.9"
 }
 ```
 
@@ -66,9 +66,9 @@ repositories {
 
 dependencies {
     // NeoForge 1.21.1（本分支）
-    implementation("io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.7")
+    implementation("io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.9")
     // Forge 1.20.1（1.20.1-forge 分支）:
-    // implementation("io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.7")
+    // implementation("io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.9")
 }
 ```
 
@@ -97,7 +97,7 @@ float dealt = BFDamageApi.hurt(target, ctx);
 
 ### 武器模组——带回调的协议伤害
 
-需要接收命中结果（击穿/跳弹/破片等）时，实现 `BFDamageHandler` 接口，通过 `dealDamage()` 发起伤害：
+需要接收命中结果（击穿/跳弹/破片等）时，实现 `BFDamageHandler` 接口，通过 `dealDamage()` 发起伤害。回调分为伤害前（`before*`，用于视觉反馈）和伤害后（`on*`，用于后效处理）两个阶段：
 
 ```java
 public class MyWeapon implements BFDamageHandler {
@@ -109,31 +109,33 @@ public class MyWeapon implements BFDamageHandler {
         float dealt = this.dealDamage(target, ctx);  // 自动注入自身为 handler
     }
 
-    // 以下回调按需覆写，默认空操作
+    // ===== 伤害前回调：命中特效（伤害数字弹出前） =====
 
     @Override
-    public void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {
+    public void beforePenetrated(BFHurtTarget target, BFDamageContext ctx) {
         spawnPenEffects(ctx.hitPoint());
     }
 
     @Override
-    public void onBlocked(BFHurtTarget target, BFDamageContext ctx) {
+    public void beforeBlocked(BFHurtTarget target, BFDamageContext ctx) {
         spawnSparkEffects(ctx.hitPoint());
     }
 
     @Override
-    public void onRicochet(BFHurtTarget target, BFDamageContext ctx) {
+    public void beforeRicochet(BFHurtTarget target, BFDamageContext ctx) {
         playRicochetSound(ctx.hitPoint());
     }
 
+    // ===== 伤害后回调：后效处理 =====
+
     @Override
-    public void onOvermatch(BFHurtTarget target, BFDamageContext ctx) {
-        // 超匹配（碾压）——弹体完整穿透，不碎裂
+    public void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {
+        penetrationStats.recordHit(target, ctx);
     }
 
     @Override
     public void onSpall(BFHurtTarget target, BFDamageContext ctx) {
-        // 破片——弹体碎裂，产生二次杀伤
+        spawnFragmentBullets(ctx.hitPoint(), ctx.hitNormal(), 4);
     }
 }
 ```

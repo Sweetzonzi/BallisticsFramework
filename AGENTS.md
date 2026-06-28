@@ -16,7 +16,7 @@
 
 - **Minecraft 1.21.1**, **NeoForge 21.1.219**, **Java 21**
 - **mod_id**: `ballistics_framework`, package: `io.github.sweetzonzi.ballistics_framework`
-- Current version: `1.0.0.alpha.6` (from `gradle.properties`)
+- Current version: `1.0.0.alpha.9` (from `gradle.properties`)
 - License: LGPL 3.0
 - Wiki (MkDocs) at `docs/`, CI deploys to GitHub Pages
 
@@ -42,7 +42,7 @@ Key entrypoints: `api/BFDamageApi.hurt(Object target, BFDamageContext ctx)` (ter
 
 Pipeline branches in `BFDamageApi.hurt()`:
 1. **BFHurtTarget** → full pipeline via target's methods
-2. **BFHurtTarget + BFArmorMaterial armor** → armor layer first, then entity body (double pipeline)
+2. **BFHurtTarget + BFArmorMaterial armor** → armor layer first (with armor-layer callbacks), then entity body (with body-layer callbacks) — double pipeline with dual callback rounds
 3. **LivingEntity w/ BFArmorMaterial armor** → adapter wraps entity
 4. **Plain Entity** → vanilla `entity.hurt()` fallback
 
@@ -69,7 +69,8 @@ Mixin interceptors (`EntityHurtMixin`, `LivingEntityHurtMixin`) catch non-protoc
 - Weapon mods use `BFDamageHandler.dealDamage(target, ctx)` to auto-inject handler
 - Context stack uses identity (`==`) comparison for re-entry guard
 - Pipeline call order: `getRHA` → `modifyPenetration` → `resolvePenetration` → `calculateFinalDamage` → `hurt`
-- For composite targets (branch 0), penetration callback triggers based on entity body result, not armor layer
+- Handler callbacks fire in two phases per penetration layer: `before*` callbacks (pre-`hurt()`) and `on*` callbacks (post-`hurt()`)
+- For composite targets (branch 0), callbacks fire for BOTH armor layer and entity body layer — two rounds of callbacks
 
 ## CI / Release
 

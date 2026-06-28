@@ -34,7 +34,7 @@ The protocol's guiding principle is **wrap, don't replace** — it never bypasse
 ./gradlew build
 ```
 
-Output at `build/libs/ballistics_framework-1.21.1-1.0-SNAPSHOT.jar`.
+Output at `build/libs/ballistics_framework-1.21.1-neoforge-1.0.0.alpha.9.jar`.
 
 Dependency via flatDir local jar or source-set dependency; declare in `neoforge.mods.toml`.
 
@@ -61,7 +61,7 @@ If the target implements `BFHurtTarget`, the full penetration pipeline runs auto
 
 ### Weapon Mod — Protocol Damage with Callbacks
 
-To receive hit results (penetration/ricochet/spall/overmatch), implement `BFDamageHandler` and use `dealDamage()`:
+To receive hit results (penetration/ricochet/spall/overmatch), implement `BFDamageHandler` and use `dealDamage()`. Callbacks fire in two phases — `before*` (visual feedback, pre-damage) and `on*` (post-effects, post-damage):
 
 ```java
 public class MyWeapon implements BFDamageHandler {
@@ -73,31 +73,33 @@ public class MyWeapon implements BFDamageHandler {
         float dealt = this.dealDamage(target, ctx);  // auto-injects self as handler
     }
 
-    // Override as needed; all default to no-op
+    // ===== Before-damage callbacks: visual feedback (before damage number) =====
 
     @Override
-    public void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {
+    public void beforePenetrated(BFHurtTarget target, BFDamageContext ctx) {
         spawnPenEffects(ctx.hitPoint());
     }
 
     @Override
-    public void onBlocked(BFHurtTarget target, BFDamageContext ctx) {
+    public void beforeBlocked(BFHurtTarget target, BFDamageContext ctx) {
         spawnSparkEffects(ctx.hitPoint());
     }
 
     @Override
-    public void onRicochet(BFHurtTarget target, BFDamageContext ctx) {
+    public void beforeRicochet(BFHurtTarget target, BFDamageContext ctx) {
         playRicochetSound(ctx.hitPoint());
     }
 
+    // ===== After-damage callbacks: post-effects =====
+
     @Override
-    public void onOvermatch(BFHurtTarget target, BFDamageContext ctx) {
-        // Overmatch (full over-penetration) — projectile passes through intact
+    public void onPenetrated(BFHurtTarget target, BFDamageContext ctx) {
+        penetrationStats.recordHit(target, ctx);
     }
 
     @Override
     public void onSpall(BFHurtTarget target, BFDamageContext ctx) {
-        // Spall/fragmentation — projectile shatters
+        spawnFragmentBullets(ctx.hitPoint(), ctx.hitNormal(), 4);
     }
 }
 ```
@@ -319,8 +321,10 @@ BFDamageApi.hurt(target, ctx)          ← weapon mod entry
     │     ├── target.modifyPenetration(ctx)     ← modifier (ERA, slope)
     │     ├── target.resolvePenetration(ctx)    ← PENETRATED/BLOCKED/RICOCHET
     │     ├── target.calculateFinalDamage(ctx, result) ← final damage
+    │     ├── triggerBeforeCallbacks           ← before* callbacks (pre-damage)
     │     ├── target.hurt(source, finalDmg)     ← execute damage
-    │     └── if (handler != null) → triggerCallbacks  ← callbacks
+    │     ├── target.afterHurt(ctx, result, finalDmg)
+    │     └── triggerCallbacks                 ← on* callbacks (post-damage)
     │
     └── target instanceof LivingEntity
           └── living.hurt(source, baseDamage)   ← vanilla fallback

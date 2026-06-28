@@ -66,8 +66,16 @@ public final class BFDamageApi {
                 float residualPen = adapter.modifyPenetration(ctx);
                 PenetrationResult armorResult = adapter.resolvePenetration(ctx);
                 float residualDmg = adapter.calculateFinalDamage(ctx, armorResult);
+                // 护甲层回调——告知 handler 护甲层的穿甲结果（击穿/阻挡/跳弹）
+                if (handler != null) {
+                    triggerBeforeCallbacks(handler, adapter, ctx, armorResult);
+                }
                 // 护甲层 afterHurt（在 callFinalDmg 之后、hurt 之前触发）
                 adapter.armorAfterHurt(ctx, armorResult, residualDmg);
+                // 护甲层回调——告知 handler 护甲层的穿甲结果（击穿/阻挡/跳弹）
+                if (handler != null) {
+                    triggerCallbacks(handler, adapter, ctx, armorResult);
+                }
 
                 // 构造子上下文——未击穿/跳弹时穿深传 0 表示仅钝伤
                 float childPen = armorResult == PenetrationResult.PENETRATED
@@ -77,12 +85,16 @@ public final class BFDamageApi {
                 // 第二层：本体始终执行完整管线
                 PenetrationResult entityResult = bfTarget.resolvePenetration(childCtx);
                 float finalDmg = bfTarget.calculateFinalDamage(childCtx, entityResult);
+                // 本体层伤害前回调（在本体 hurt 之前触发，此时穿甲判定已完成）
+                if (handler != null) {
+                    triggerBeforeCallbacks(handler, bfTarget, childCtx, entityResult);
+                }
                 boolean success = bfTarget.hurt(ctx.source(), finalDmg);
                 float dealt = success ? finalDmg : 0f;
                 // 本体层 afterHurt
                 bfTarget.afterHurt(childCtx, entityResult, finalDmg);
 
-                // 回调在本体层的最终结果上触发
+                // 本体层伤害后回调
                 if (handler != null) {
                     triggerCallbacks(handler, bfTarget, childCtx, entityResult);
                 }
@@ -93,6 +105,10 @@ public final class BFDamageApi {
             if (target instanceof BFHurtTarget bfTarget) {
                 PenetrationResult result = bfTarget.resolvePenetration(ctx);
                 float finalDmg = bfTarget.calculateFinalDamage(ctx, result);
+                // 伤害前回调（在 hurt 之前触发）
+                if (handler != null) {
+                    triggerBeforeCallbacks(handler, bfTarget, ctx, result);
+                }
                 boolean success = bfTarget.hurt(ctx.source(), finalDmg);
                 float dealt = success ? finalDmg : 0f;
                 // 实体本体 afterHurt
@@ -108,6 +124,10 @@ public final class BFDamageApi {
                 BFArmorAdapter adapter = new BFArmorAdapter(living);
                 PenetrationResult result = adapter.resolvePenetration(ctx);
                 float finalDmg = adapter.calculateFinalDamage(ctx, result);
+                // 伤害前回调（在适配器 hurt 之前触发）
+                if (handler != null) {
+                    triggerBeforeCallbacks(handler, adapter, ctx, result);
+                }
                 // 护甲层 afterHurt（在 hurt 之前触发）
                 adapter.armorAfterHurt(ctx, result, finalDmg);
                 boolean success = adapter.hurt(ctx.source(), finalDmg);
@@ -120,6 +140,10 @@ public final class BFDamageApi {
             }
             // 分支3：普通 Entity → 原版回退，但有 handler 时照样触发回调
             if (target instanceof Entity entity) {
+                // 伤害前回调（普通实体，无穿甲判定）
+                if (handler != null) {
+                    handler.beforeNormalEntityHit(entity, ctx, ctx.baseDamage());
+                }
                 boolean success = entity.hurt(ctx.source(), ctx.baseDamage());
                 if (handler != null) {
                     handler.onNormalEntityHit(entity, ctx, ctx.baseDamage(), success);
@@ -133,8 +157,41 @@ public final class BFDamageApi {
     }
 
     /**
-     * 根据穿甲结果触发 handler 上的回调。
+     * 根据穿甲结果触发 handler 上的伤害前回调。
      * <p>
+     * 在穿甲判定完成、最终伤害已计算后、{@code hurt()} 执行前调用。
+     * 超匹配(碾压)与破片由 handler 的默认方法动态判定：
+     * <ul>
+     *   <li>PENETRATED：超匹配(碾压)优先于破片，二者互斥</li>
+     *   <li>BLOCKED：仅可能触发破片</li>
+     *   <li>RICOCHET：仅跳弹回调，无超匹配(碾压)或破片</li>
+     * </ul>
+     */
+    private static void triggerBeforeCallbacks(BFDamageHandler handler, BFHurtTarget target,
+                                               BFDamageContext ctx, PenetrationResult result) {
+        switch (result) {
+            case PENETRATED -> {
+                handler.beforePenetrated(target, ctx);
+                if (handler.isOvermatch(target, ctx, result)) {
+                    handler.beforeOvermatch(target, ctx);
+                } else if (handler.isSpall(target, ctx, result)) {
+                    handler.beforeSpall(target, ctx);
+                }
+            }
+            case BLOCKED -> {
+                handler.beforeBlocked(target, ctx);
+                if (handler.isSpall(target, ctx, result)) {
+                    handler.beforeSpall(target, ctx);
+                }
+            }
+            case RICOCHET -> handler.beforeRicochet(target, ctx);
+        }
+    }
+
+    /**
+     * 根据穿甲结果触发 handler 上的伤害后回调。
+     * <p>
+     * 在 {@code hurt()} 执行后调用。
      * 超匹配(碾压)与破片由 handler 的默认方法动态判定：
      * <ul>
      *   <li>PENETRATED：超匹配(碾压)优先于破片，二者互斥</li>
