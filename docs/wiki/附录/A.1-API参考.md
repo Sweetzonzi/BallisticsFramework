@@ -227,8 +227,19 @@ static <T> BFDamageExtensionKey<T> register(ResourceLocation id, Class<T> type, 
 
 ```java
 static final BFDamageExtensionKey<Float> FUSE_DELAY  // 引信延迟（秒），默认 0（瞬发）
-static final BFDamageExtensionKey<Float> CALIBER     // 弹体口径（米），默认 0.1
-static final BFDamageExtensionKey<Float> MASS        // 弹体质量（千克），默认 10
+static final BFDamageExtensionKey<Float> CALIBER     // 弹体口径（mm），默认 7.62（典型步枪弹）
+static final BFDamageExtensionKey<Float> MASS        // 弹体质量（kg），默认 10
+static final BFDamageExtensionKey<Float> IMPULSE     // 命中冲量标量（N·s），默认 0（无额外冲量）
+```
+
+### 构造器
+
+```java
+// 创建一个空扩展容器
+BFDamageExtensions()
+
+// 创建已有扩展容器的浅拷贝（后续 set 互不影响）
+BFDamageExtensions(BFDamageExtensions other)
 ```
 
 ### 实例方法
@@ -237,8 +248,16 @@ static final BFDamageExtensionKey<Float> MASS        // 弹体质量（千克）
 // 读取扩展值。未设置时返回 key 注册时的默认值（永不返回 null）
 <T> T get(BFDamageExtensionKey<T> key)
 
+// 检查扩展值是否已被显式设置（与 get 不同，不会退回默认值）
+// 用于区分"未设置"与"显式设为默认值"——例如 IMPULSE 为 0 时：
+//   未设置 → 接收方使用自有击退公式；显式设为 0 → 明确不施加击退
+boolean contains(BFDamageExtensionKey<?> key)
+
 // 写入扩展值。key 和 value 均不能为 null
 <T> void set(BFDamageExtensionKey<T> key, T value)
+
+// 返回此扩展容器的浅拷贝（独立内部映射）
+BFDamageExtensions copy()
 ```
 
 ---

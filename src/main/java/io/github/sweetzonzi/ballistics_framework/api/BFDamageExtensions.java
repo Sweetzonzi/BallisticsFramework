@@ -60,10 +60,10 @@ public final class BFDamageExtensions {
             register(ResourceLocation.fromNamespaceAndPath("ballistics_framework", "fuse_delay"),
                     Float.class, () -> 0f);
 
-    /** 弹体口径（m），默认 0.1（100mm，典型坦克炮口径） */
+    /** 弹体口径（mm），默认 7.62（典型步枪弹口径） */
     public static final BFDamageExtensionKey<Float> CALIBER =
             register(ResourceLocation.fromNamespaceAndPath("ballistics_framework", "caliber"),
-                    Float.class, () -> 0.1f);
+                    Float.class, () -> 7.62f);
 
     /** 弹体质量（kg），默认 10（典型坦克炮穿甲弹质量） */
     public static final BFDamageExtensionKey<Float> MASS =

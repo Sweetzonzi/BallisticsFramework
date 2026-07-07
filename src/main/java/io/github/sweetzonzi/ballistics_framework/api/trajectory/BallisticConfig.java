@@ -45,7 +45,7 @@ public record BallisticConfig(
     ) {
         float mass = exts.get(BFDamageExtensions.MASS);
         float caliber = exts.get(BFDamageExtensions.CALIBER);
-        float radius = caliber / 2f;
+        float radius = caliber / 2000f;  // mm→m, 口径→半径
         float area = (float) (Math.PI * radius * radius);
         return new BallisticConfig(dragCoefficient, mass, area, gravity, timeStep, maxSteps);
     }
@@ -54,7 +54,7 @@ public record BallisticConfig(
      * 便捷构造：仅需 Cd + 口径 + 质量 + 重力（其余使用推荐默认值）。
      *
      * @param dragCoefficient 阻力系数 Cd
-     * @param caliber         弹丸口径（m）
+     * @param caliber         弹丸口径（mm）
      * @param mass            弹丸质量（kg）
      * @param gravity         重力加速度（m/s²）
      * @return 构造完成的 BallisticConfig，时间步长 0.05s，最大步数 200
@@ -62,7 +62,7 @@ public record BallisticConfig(
     public static BallisticConfig simple(
             float dragCoefficient, float caliber, float mass, float gravity
     ) {
-        float radius = caliber / 2f;
+        float radius = caliber / 2000f;  // mm→m, 口径→半径
         float area = (float) (Math.PI * radius * radius);
         return new BallisticConfig(dragCoefficient, mass, area, gravity, 0.05f, 200);
     }
