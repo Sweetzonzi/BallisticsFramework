@@ -1,6 +1,6 @@
 # A.1 API 参考
 
-本页以类为单位，按字母顺序列出协议层全部公开 API 的完整签名和说明。所有类均位于 `io.github.sweetzonzi.ballistics_framework.api` 包。
+本页以类为单位，按字母顺序列出协议层全部公开 API 的完整签名和说明。除末尾标注 `internal` 的条目外，所有类均位于 `io.github.sweetzonzi.ballistics_framework.api` 包。
 
 ---
 
@@ -110,14 +110,37 @@ static BFDamageContext getContextFor(Object target)
 // ========== 命中前目标解析 ==========
 
 /**
- * 解析命中目标。若 hitEntity 实现了 BFHitResolver，执行精确验证并返回
- * 修正后的目标与几何。否则若 hitEntity 是 BFHurtTarget，直接包装返回。
+ * 判断命中对象是否具有协议感知能力。
+ * 对象实现 BFHitResolver 或 BFHurtTarget 时返回 true。
+ * @param hit 命中对象（实体、物理体属主或其他包装体）
+ * @return true 表示可走协议解析
+ */
+static boolean isProtocolAware(Object hit)
+
+/**
+ * isProtocolAware(Object) 的实体版重载，仅作转发。
+ * @deprecated 参数类型已放宽到 Object；本重载保留用于二进制兼容。
+ */
+@Deprecated(since = "1.0.0.alpha.11")
+static boolean isProtocolAware(Entity entity)
+
+/**
+ * 解析命中目标。若命中对象实现了 BFHitResolver，执行精确验证并返回
+ * 修正后的目标与几何。否则若其自身是 BFHurtTarget，直接包装返回。
  * 返回 null 表示未命中（投射物应继续飞行）。
- * @param hitEntity 原版碰撞检测命中的实体
- * @param hitPoint  原版报告的命中点
- * @param delta     搜索矢量，其模为搜索距离上限（m），方向为命中方向
+ * @param hit      命中对象（实体、物理体属主或其他包装体）
+ * @param hitPoint 报告的命中点
+ * @param delta    搜索矢量，其模为搜索距离上限（m），方向为命中方向
  * @return 解析结果；null 表示未命中
  */
+@Nullable
+static BFHitResolveResult resolveHitTarget(Object hit, Vec3 hitPoint, Vec3 delta)
+
+/**
+ * resolveHitTarget(Object, Vec3, Vec3) 的实体版重载，仅作转发。
+ * @deprecated 参数类型已放宽到 Object；本重载保留用于二进制兼容。
+ */
+@Deprecated(since = "1.0.0.alpha.11")
 @Nullable
 static BFHitResolveResult resolveHitTarget(Entity hitEntity, Vec3 hitPoint, Vec3 delta)
 
@@ -412,13 +435,17 @@ default EquipmentSlot mapHitToSlot(LivingEntity wearer, BFDamageContext ctx)
 
 ## BFHitResolver
 
-**`public interface BFHitResolver`** — 命中前目标解析接口。由代理实体实现，在 `BFDamageApi.hurt()` 调用之前执行，将 AABB 命中重定向到真正的物理伤害目标。
+**`public interface BFHitResolver`** — 命中前目标解析接口。由代理对象实现（实体、物理体属主或其他包装体），在 `BFDamageApi.hurt()` 调用之前执行，将 AABB 命中重定向到真正的物理伤害目标。
 
 ### Abstract 方法
 
 ```java
 /**
  * 解析命中的实际伤害目标（主方法）。
+ * 必须是幂等且无副作用的纯查询——投射物命中通常只解析一次
+ * （Projectile.onHit 阶段的结果经缓存传给 Entity.hurt 阶段）；
+ * 仅当伤害来源的 direct entity 不是该投射物时，hurt 阶段才按来源重新解析一次。
+ * 同一组 (hitPoint, delta) 必须始终返回同一结果。
  * @param hitPoint 原版报告的命中点（世界坐标）
  * @param delta    搜索矢量，其模为搜索距离上限（m），方向为命中方向
  * @return 解析结果；null 表示实际未命中
@@ -438,6 +465,60 @@ BFHitResolveResult resolveHit(Vec3 hitPoint, Vec3 delta)
  */
 @Nullable
 default BFHitResolveResult resolveHit(HitResult hitResult, Vec3 delta)
+```
+
+### Static 方法
+
+```java
+/**
+ * 由攻击者的速度矢量导出解析搜索矢量。
+ * 速率钳制在 [0.5, 4.0] 后取两倍位移，即搜索距离上限落在 [1.0, 8.0] m。
+ * 速率低于 0.001 或为非有限值时返回 Vec3.ZERO，调用方应对零矢量早退。
+ * @param velocity 攻击者速度矢量
+ * @return 搜索矢量
+ */
+static Vec3 searchDelta(Vec3 velocity)
+
+/**
+ * 由协议外伤害来源导出解析搜索几何，按伤害类别分派几何来源
+ * （爆炸 / 投射物 / 活体近战 / 其他有源位置 / 无源位置）。
+ * 爆炸分支优先：其 direct entity 类型不固定（苦力怕、TNT、火球）。
+ * @param self   被命中的代理对象
+ * @param source 原版伤害来源
+ * @return 长度为 2 的数组 [hitPoint, delta]；无法构造几何时返回 null
+ */
+@Nullable
+static Vec3[] searchRay(Entity self, DamageSource source)
+```
+
+---
+
+## BFHitResolveCache（internal）
+
+**`public interface BFHitResolveCache`**（位于 `io.github.sweetzonzi.ballistics_framework.internal`）— 投射物命中结果缓存。**内部接口，不属于公开 API**，外部模组不应引用。
+
+它存在的原因：`Projectile#onHit` 阶段持有精确几何并已完成一次解析，而 `Entity#hurt` 阶段未必能还原那份几何，重新解析可能得到相反结论。因此 `ProjectileHitResolverMixin` 在判定为真命中后把结果写入投射物自身的字段，拦截器在 `hurt` 阶段直接取用。复用范围限于单次命中事件——读取即清空，且仅在命中实体身份匹配时返回。
+
+接口声明为 `public` 只表达"能被 mixin 包看到"：唯一实现方 `ProjectileHitResolverMixin` 位于 mixin 包，其覆写方法必须是 public，而接口方法不能比接口本身更可见。
+
+```java
+// 一次命中的判定结果：被命中的实体 + 该次命中的解析结果
+record CachedResolve(Entity hitEntity, BFHitResolveResult result)
+
+/**
+ * 写入本次命中的解析结果。应在 resolveHit 判定为真命中之后、放行原版流程之前调用。
+ * @param hitEntity 原版报告的命中实体，即随后 hurt 的接收者
+ * @param result    本次命中的解析结果
+ */
+void bf$cacheResolve(Entity hitEntity, BFHitResolveResult result)
+
+/**
+ * 取出并清空缓存。仅当缓存的命中实体与 hitEntity 身份相等时返回该记录，其余返回 null。
+ * @param hitEntity 当前正在承受伤害的实体
+ * @return 本次命中的解析结果；无记录或命中实体不匹配时返回 null
+ */
+@Nullable
+CachedResolve bf$takeResolve(Entity hitEntity)
 ```
 
 ---
