@@ -1,6 +1,6 @@
 # 项目术语表
 
-> 生成时间：2026-05-11
+> 生成时间：2026-09-30
 > 项目：BallisticsFramework（弹道框架 — 内弹道、外弹道、终点弹道伤害协议层）
 
 ## 概念列表
@@ -36,25 +36,25 @@
 ### 协议伤害目标（BFHurtTarget）
 
 - **职责**：声明一个实体参与协议穿甲判定的核心接口
-- **描述**：协议层的核心抽象。任何希望参与协议判定的实体都必须实现此接口。包含 3 个抽象方法（`getArmorLevel`、`hurt`、`createContextFromVanilla`）和 6 个 default 方法（`getRHA`、`modifyPenetration`、`isArmorPenetrated`、`resolvePenetration`、`calculateFinalDamage`、`getEntity`）。简易模式只需实现 `getArmorLevel`，其余方法基于离散等级提供完整默认行为。`getBFEntity()` 默认返回 `this`（若自身是 Entity 子类），适配器应覆写为返回被包裹的实体。
+- **描述**：协议层的核心抽象。任何希望参与协议判定的实体都必须实现此接口。包含 3 个抽象方法（`getArmorLevel`、`hurt`、`createContextFromVanilla`）和 7 个 default 方法（`getRHA`、`modifyPenetration`、`isArmorPenetrated`、`resolvePenetration`、`calculateFinalDamage`、`afterHurt`、`getBFEntity`）。简易模式只需实现 `getArmorLevel`，其余方法基于离散等级提供完整默认行为。`getBFEntity()` 默认返回 `this`（若自身是 Entity 子类），适配器应覆写为返回被包裹的实体。
 - **关键类**：
   - `io.github.sweetzonzi.ballistics_framework.api.BFHurtTarget` — 协议目标接口
 
 ---
 
-### 护甲物品接口（TBArmorMaterial）
+### 护甲物品接口（BFArmorMaterial）
 
 - **职责**：护甲物品接入协议的标准接口，使穿戴者自动获得穿甲判定能力
-- **描述**：护甲模组让物品实现此接口后，穿戴该物品的实体——无论是否实现 `BFHurtTarget`——在受到协议伤害或原版伤害时，协议层都会通过 `TBArmorAdapter` 自动将其纳入穿甲判定管线。简易模式只需实现 `getArmorLevel(EquipmentSlot, BFDamageContext)`，其余管线方法均有逐槽位的默认实现（与 `BFHurtTarget` 的默认行为对称）。精密模式可覆写 `modifyPenetration`（爆反拦截、间隙衰减）、`resolvePenetration`（跳弹判定）、`calculateFinalDamage`（自定义伤害计算）。提供 `mapHitToSlot` 按命中点高度占比（HEAD > 85% / CHEST > 55% / LEGS > 35% / FEET）映射到装备槽位。
+- **描述**：护甲模组让物品实现此接口后，穿戴该物品的实体——无论是否实现 `BFHurtTarget`——在受到协议伤害或原版伤害时，协议层都会通过 `BFArmorAdapter` 自动将其纳入穿甲判定管线。简易模式只需实现 `getArmorLevel(EquipmentSlot, BFDamageContext)`，其余管线方法均有逐槽位的默认实现（与 `BFHurtTarget` 的默认行为对称）。精密模式可覆写 `modifyPenetration`（爆反拦截、间隙衰减）、`resolvePenetration`（跳弹判定）、`calculateFinalDamage`（自定义伤害计算）。提供 `mapHitToSlot` 按命中点高度占比（HEAD > 85% / CHEST > 55% / LEGS > 35% / FEET）映射到装备槽位。
 - **关键类**：
   - `io.github.sweetzonzi.ballistics_framework.api.BFArmorMaterial` — 护甲物品接口
 
 ---
 
-### 护甲适配器（TBArmorAdapter）
+### 护甲适配器（BFArmorAdapter）
 
-- **职责**：内部适配器，将穿戴了 TBArmorMaterial 护甲的 LivingEntity 包裹为 BFHurtTarget
-- **描述**：内部实现类（非公开 API），外部模组不可直接引用。在管线首次调用时惰性解析命中槽位（先按 `mapHitToSlot` 精确匹配，无命中点时退回到取最高护甲等级的保守策略），整个管线周期内缓存解析结果。逐方法委托到对应槽位护甲的 `TBArmorMaterial` 方法，使护甲模组拥有与 `BFHurtTarget` 实现者同等的定制权限。`hurt()` 委托 `entity.hurt()` 走原版管线，因此原版 ARMOR/ARMOR_TOUGHNESS/保护附魔会进行二次减免（两层防护模型）。
+- **职责**：内部适配器，将穿戴了 BFArmorMaterial 护甲的 LivingEntity 包裹为 BFHurtTarget
+- **描述**：内部实现类（非公开 API），外部模组不可直接引用。在管线首次调用时惰性解析命中槽位（先按 `mapHitToSlot` 精确匹配，无命中点时退回到取最高护甲等级的保守策略），整个管线周期内缓存解析结果。逐方法委托到对应槽位护甲的 `BFArmorMaterial` 方法，使护甲模组拥有与 `BFHurtTarget` 实现者同等的定制权限。`hurt()` 委托 `entity.hurt()` 走原版管线，因此原版 ARMOR/ARMOR_TOUGHNESS/保护附魔会进行二次减免（两层防护模型）。`createContextFromVanilla()` 遍历全部护甲槽位委托给护甲物品，任一件返回非 null 即接管。
 - **关键类**：
   - `io.github.sweetzonzi.ballistics_framework.internal.BFArmorAdapter` — 适配器实现
   - `io.github.sweetzonzi.ballistics_framework.api.BFArmorMaterial` — 被委托的护甲接口
@@ -91,7 +91,7 @@
 
 ---
 
-### ThreadLocal 上下文栈（TBContextStack）
+### ThreadLocal 上下文栈（BFContextStack）
 
 - **职责**：在调用链内隐式传播命中上下文，并提供重入守卫
 - **描述**：由于原版 `hurt` 方法签名无法传递额外参数，协议层使用 `ThreadLocal<Deque<Entry>>` 栈在调用链内传播 `(target, context)` 对。栈元素绑定目标实体（`==` 引用比较），精确区分"同一目标的协议管线内重入"（放行原版）与"副作用触发的新目标伤害如荆棘反伤"（进入协议拦截）。push/pop 由 `BFDamageApi.hurt()` 的 try/finally 保证成对出现。空栈 pop 时记录错误日志以便调试调用链不匹配的 bug。
@@ -101,14 +101,15 @@
 
 ---
 
-### Mixin 注入拦截（BFHurtInterceptor / EntityHurtMixin / LivingEntityHurtMixin）
+### Mixin 注入拦截（BFHurtInterceptor / EntityHurtMixin / LivingEntityHurtMixin / ProjectileHitResolverMixin）
 
-- **职责**：通过 Mixin 注入拦截协议外伤害，将非协议来源的伤害引入协议管线
-- **描述**：必须同时注入 `Entity#hurt` 和 `LivingEntity#hurt` 的 HEAD 阶段（cancellable=true），避免遗漏任意一方的实现者。拦截逻辑为四态判断：① 已在协议管线内（`hasContextFor`）→ 放行原版不拦截；② 实体自身是 `BFHurtTarget` → 通过 `createContextFromVanilla` 构造上下文后走完整管线；③ 实体是 `LivingEntity` 且穿戴了 `TBArmorMaterial` 护甲 → 通过 `TBArmorAdapter` 接管并走完整管线；④ 其他普通实体 → 不做干预，放行原版流程。共享逻辑抽离到 `BFHurtInterceptor` 避免在 `@Mixin` 类中声明静态方法。
+- **职责**：通过 Mixin 注入拦截协议外伤害，将非协议来源的伤害引入协议管线；并在投射物命中处理之前做一次精确验证
+- **描述**：`EntityHurtMixin` 与 `LivingEntityHurtMixin` 必须同时注入 `Entity#hurt` 和 `LivingEntity#hurt` 的 HEAD 阶段（cancellable=true），避免遗漏任意一方的实现者；两者统一委托 `BFHurtInterceptor.intercept`，按顺序判定五种情况：① 已在协议管线内（`hasContextFor`）→ 放行原版不拦截；② 自身是 `BFHurtTarget` → 通过 `createContextFromVanilla` 构造上下文后走完整管线（返回 null 时，若同时实现 `BFHitResolver` 则落到情况③，否则放行原版）；③ 自身是 `BFHitResolver` → 优先取用投射物在 `onHit` 阶段写下的命中结果缓存，其余来源按伤害类别构造搜索几何后解析，把原版伤害转发给解析出的实际目标（假阳性返回 false 不造成伤害；无法构造几何、解析回自身、实际目标不接受时放行原版）；④ 是 `LivingEntity` 且穿戴了 `BFArmorMaterial` 护甲 → 通过 `BFArmorAdapter` 接管并走完整管线；⑤ 其他普通实体 → 不做干预，放行原版流程。`ProjectileHitResolverMixin` 注入 `Projectile#onHit(HitResult)` 的 HEAD，假阳性时取消原版流程（投射物继续飞行），真命中时把判定结果写入投射物自身的缓存。共享逻辑抽离到 `BFHurtInterceptor` 避免在 `@Mixin` 类中声明静态方法。
 - **关键类**：
-  - `io.github.sweetzonzi.ballistics_framework.internal.BFHurtInterceptor` — 共享拦截逻辑
+  - `io.github.sweetzonzi.ballistics_framework.internal.BFHurtInterceptor` — 共享拦截逻辑（五情况判定）
   - `io.github.sweetzonzi.ballistics_framework.mixin.EntityHurtMixin` — `@Mixin(Entity.class)`
   - `io.github.sweetzonzi.ballistics_framework.mixin.LivingEntityHurtMixin` — `@Mixin(LivingEntity.class)`
+  - `io.github.sweetzonzi.ballistics_framework.mixin.ProjectileHitResolverMixin` — `@Mixin(Projectile.class)`，命中前验证与结果缓存写入
   - `io.github.sweetzonzi.ballistics_framework.api.BFDamageApi` — `hasContextFor()` 重入守卫
 
 ---
@@ -126,7 +127,7 @@
 ### RHA 等效厚度（RHA Equivalent Thickness）
 
 - **职责**：衡量装甲防护能力的标准化单位，协议层的统一参考基准
-- **描述**：Rolled Homogeneous Armor（轧制均质装甲）的等效厚度，单位为 mm。武器模组在 `BFDamageContext.penetration` 和扩展字段中填入理论穿深，护甲模组在 `BFHurtTarget.getRHA()`/`TBArmorMaterial.getRHA()` 中返回命中部位的等效厚度。默认击穿判定使用离散等级比较：先调用 `modifyPenetration` 获取修正后的有效穿深，映射为 `ArmorLevel`，再与护甲等级通过 `canDefeat`（`>=` 比较）判定。精密模组可覆写为直接比较 `modifyPenetration > getRHA` 的纯数值模型。
+- **描述**：Rolled Homogeneous Armor（轧制均质装甲）的等效厚度，单位为 mm。武器模组在 `BFDamageContext.penetration` 和扩展字段中填入理论穿深，护甲模组在 `BFHurtTarget.getRHA()`/`BFArmorMaterial.getRHA()` 中返回命中部位的等效厚度。默认击穿判定使用离散等级比较：先调用 `modifyPenetration` 获取修正后的有效穿深，映射为 `ArmorLevel`，再与护甲等级通过 `canDefeat`（`>=` 比较）判定。精密模组可覆写为直接比较 `modifyPenetration > getRHA` 的纯数值模型。
 - **关键类**：
   - `io.github.sweetzonzi.ballistics_framework.api.BFDamageContext` — `penetration` 字段
   - `io.github.sweetzonzi.ballistics_framework.api.BFHurtTarget` — `getRHA()`、`modifyPenetration()` 方法
@@ -148,7 +149,7 @@
 ### 协议外伤害兼容（Vanilla Damage Compatibility）
 
 - **职责**：使非协议来源的伤害（原版生物攻击、TNT 爆炸等）在命中协议感知目标时也能走部分管线
-- **描述**：原版伤害在 Mixin 拦截后，通过 `BFHurtTarget.createContextFromVanilla()` 或 `TBArmorAdapter.createContextFromVanilla()` 转换为低信息量的 `BFDamageContext`（仅 source + baseDamage 有值，弹道字段为零值，穿深由 `estimatePenetration` 按伤害量/2 估算），然后走完整穿甲判定管线。返回 null 则退回原版流程（如虚空、指令伤害）。`BFHurtInterceptor` 的 `hasContextFor` 重入守卫确保已在管线内时不重复拦截。
+- **描述**：原版伤害在 Mixin 拦截后，通过 `BFHurtTarget.createContextFromVanilla()` 或 `BFArmorAdapter.createContextFromVanilla()` 转换为低信息量的 `BFDamageContext`（仅 source + baseDamage 有值，弹道字段为零值，穿深默认按伤害量的一半估算，即 20 HP ≈ 10mm），然后走完整穿甲判定管线。返回 null 则退回原版流程（如虚空、指令伤害）。若目标只实现了 `BFHitResolver`，拦截器从伤害来源反推搜索几何（爆炸 → 投射物 → 活体近战 → 其他有源位置的优先级），解析出实际目标后再按上述流程转发；无源位置的伤害（虚空、饥饿、`/kill`）没有可复检的几何，直接退回原版。`BFHurtInterceptor` 的 `hasContextFor` 重入守卫确保已在管线内时不重复拦截。
 - **关键类**：
   - `io.github.sweetzonzi.ballistics_framework.api.BFHurtTarget` — `createContextFromVanilla()` 抽象方法
   - `io.github.sweetzonzi.ballistics_framework.internal.BFHurtInterceptor` — 拦截后调用转换
@@ -156,11 +157,33 @@
 
 ---
 
+### 命中前目标解析（BFHitResolver / BFHitResolveResult）
+
+- **职责**：在伤害管线之外回答"这一击实际打中了谁"，把原始的 AABB 命中重定向到真正的物理伤害目标
+- **描述**：`BFHitResolver` 由代理对象实现——实体、物理体属主或包装体均可，接口本身不绑定实体。`resolveHit(hitPoint, delta)` 执行精确验证：以 `hitPoint` 为起点、沿 `delta`（方向为命中方向、模为搜索距离上限）搜索，命中则返回 `BFHitResolveResult`（真正的 `BFHurtTarget` + 修正后的命中点与法线 + 扩展数据），未命中返回 null 表示假阳性。契约要求 `resolveHit` 是幂等且无副作用的纯查询——投射物命中通常只解析一次（`Projectile.onHit` 阶段的结果经缓存传给 `Entity.hurt` 阶段），仅当伤害来源的 direct entity 不是那个投射物时才由 `hurt` 阶段重新解析一次，同一组 `(hitPoint, delta)` 必须始终返回同一结果。接口用两个静态方法收敛搜索几何的规则：`searchDelta(velocity)` 由速度矢量导出搜索矢量（速率钳制在 [0.5, 4.0] 后取两倍位移，即 1~8 m），`searchRay(self, source)` 由协议外伤害来源导出几何（爆炸 → 投射物 → 活体近战 → 其他有源位置，无源位置返回 null）。解析结果既服务于框架内攻击者，也服务于拦截器的协议外伤害转发。
+- **关键类**：
+  - `io.github.sweetzonzi.ballistics_framework.api.BFHitResolver` — 解析接口（主方法 + `HitResult` 便利重载 + `searchDelta`/`searchRay`）
+  - `io.github.sweetzonzi.ballistics_framework.api.BFHitResolveResult` — 解析结果 record（actualTarget + 修正几何 + extensions）
+  - `io.github.sweetzonzi.ballistics_framework.api.BFDamageApi` — `resolveHitTarget()` / `isProtocolAware()` 统一入口
+
+---
+
+### 投射物命中结果缓存（BFHitResolveCache / ProjectileHitResolverMixin）
+
+- **职责**：让投射物命中的两个阶段（`onHit` 与 `hurt`）共用同一份判定结果，避免 `hurt` 阶段重建几何后重判
+- **描述**：`onHit` 阶段持有射线与 AABB 的精确交点，而 `hurt` 阶段只能从 `DamageSource` 反推，拿到的是投射物当前坐标（本 tick 移动之前的值），两处几何并不等价——在 `hurt` 阶段重建几何后重判可能得到相反结论，而 `hurt` 阶段的结论会直接决定伤害去向。因此 `ProjectileHitResolverMixin` 在判定为真命中后把 `BFHitResolveResult` 写入投射物自身（即 `BFHitResolveCache` 的字段），拦截器在 `hurt` 阶段直接取用。缓存边界：只对投射物来源生效（`source.getDirectEntity()` 必须是该投射物）；单次命中有效、读取即清空，不跨命中事件复用（穿透投射物在同一 tick 内连续命中多个实体时各写各读）；仅当缓存记录的命中实体与当前受击实体身份相等时返回；判定为假阳性时不写入。该接口位于 internal 包但必须声明为 `public`——唯一实现方在 mixin 包，接口方法不能比接口本身更可见；它不属于公开 API，外部模组不应引用。
+- **关键类**：
+  - `io.github.sweetzonzi.ballistics_framework.internal.BFHitResolveCache` — 缓存载体接口 + `CachedResolve` record
+  - `io.github.sweetzonzi.ballistics_framework.mixin.ProjectileHitResolverMixin` — 缓存的实现与写入方
+  - `io.github.sweetzonzi.ballistics_framework.internal.BFHurtInterceptor` — 缓存的取用方（情况③）
+
+---
+
 ### 协议层对外入口（BFDamageApi）
 
 - **职责**：协议层的唯一静态入口，封装 ThreadLocal 栈管理、管线执行和回调触发
-- **描述**：三个静态方法：`hurt(Object, BFDamageContext)` 发起协议伤害，内部完成三路分支调度（BFHurtTarget → 直接管线 / LivingEntity+TBArmorMaterial → 适配器管线 / 普通 Entity → 原版回退）和 try/finally 栈管理；`hasContextFor(Object)` 供 mixin 判断重入；`getContextFor(Object)` 供管线方法内部取回当前上下文以读取命中信息播放特效等。`hurt` 的返回值是协议计算伤害量，由于原版护甲二次减免，此值 ≥ 实体实际减少的 HP。
+- **描述**：`hurt(Object, BFDamageContext)` 发起协议伤害，内部完成四路分支调度（复合目标 BFHurtTarget + BFArmorMaterial → 护甲层与本体层双层串联 / BFHurtTarget → 直接管线 / LivingEntity + BFArmorMaterial → 适配器管线 / 普通 Entity → 原版回退）和 try/finally 栈管理；`hasContextFor(Object)` 供 mixin 判断重入；`getContextFor(Object)` 供管线方法内部取回当前上下文以读取命中信息播放特效等。命中前解析一组：`isProtocolAware(Object)` 判断命中对象是否实现 `BFHitResolver` 或 `BFHurtTarget`；`resolveHitTarget(Object, Vec3, Vec3)` 与 `resolveHitTarget(HitResult, Vec3)` 解析实际目标，命中对象不限于实体，另有实体版重载（`isProtocolAware(Entity)`、`resolveHitTarget(Entity, Vec3, Vec3)`）标记 `@Deprecated`，仅作二进制兼容转发。`hurt` 的返回值是协议计算伤害量，由于原版护甲二次减免，此值 ≥ 实体实际减少的 HP。
 - **关键类**：
-  - `io.github.sweetzonzi.ballistics_framework.api.BFDamageApi` — 三个静态方法
+  - `io.github.sweetzonzi.ballistics_framework.api.BFDamageApi` — 伤害入口 + 上下文查询 + 命中前解析
   - `io.github.sweetzonzi.ballistics_framework.internal.BFContextStack` — 被委托的栈操作
-  - `io.github.sweetzonzi.ballistics_framework.internal.BFArmorAdapter` — 分支 2 的适配器创建
+  - `io.github.sweetzonzi.ballistics_framework.internal.BFArmorAdapter` — 分支 0/2 的适配器创建

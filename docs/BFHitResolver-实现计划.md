@@ -1,6 +1,8 @@
 # BFHitResolver 实现计划
 
 > 关联设计文档：[终点弹道设计文档 §十七](./终点弹道设计文档.md#十七bfhitresolver--命中前目标解析接口)
+>
+> 本文是 P1 阶段的落地记录：`BFHitResolver` 接口、`BFHitResolveResult` record、`BFDamageApi.resolveHitTarget()` 与 `ProjectileHitResolverMixin` 已按本文实现。下游集成部分（Step 4、Step 5）与签名部分（Step 1、Step 3、Step 6 的代码块）已被 [BFHitResolver-去实体化与命中转发计划.md](./BFHitResolver-去实体化与命中转发计划.md) 取代——参数类型放宽到 `Object`、新增 `searchDelta` / `searchRay`、`ProjectileHitResolverMixin` 追加命中结果缓存写入。本文的代码块保留为 P1 快照，阅读时以那份计划为准；设计动机与三层体系的叙述不在取代范围内。
 
 ## 一、概述
 

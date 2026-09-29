@@ -262,24 +262,36 @@ public final class BFDamageApi {
     // ======================== 命中前目标解析 ========================
 
     /**
-     * 判断实体是否具有协议感知能力。
+     * 判断命中对象是否具有协议感知能力。
      * <p>
-     * 仅当实体实现了 {@link BFHitResolver} 或 {@link BFHurtTarget} 时返回 true。
+     * 对象实现 {@link BFHitResolver} 或 {@link BFHurtTarget} 时返回 true。
      * 调用方应在调用 {@link #resolveHitTarget} 之前使用此方法分支：
-     * 协议感知实体走完整管线；普通实体回退原版 {@code entity.hurt()}。
+     * 协议感知对象走完整管线；普通实体回退原版 {@code entity.hurt()}。
      *
-     * @param entity 待判断的实体
-     * @return true 表示实体具有协议感知能力
+     * @param hit 命中对象（实体、物理体属主或其他包装体）
+     * @return true 表示可走协议解析
      */
+    public static boolean isProtocolAware(Object hit) {
+        return hit instanceof BFHitResolver || hit instanceof BFHurtTarget;
+    }
+
+    /**
+     * {@link #isProtocolAware(Object)} 的实体版重载。
+     *
+     * @deprecated 请改用 {@link #isProtocolAware(Object)}；本重载仅作转发，
+     *             保留是为了让已编译的下游模组按实体描述符查找方法时不抛
+     *             {@code NoSuchMethodError}。
+     */
+    @Deprecated(since = "1.0.0.alpha.11")
     public static boolean isProtocolAware(Entity entity) {
-        return entity instanceof BFHitResolver || entity instanceof BFHurtTarget;
+        return isProtocolAware((Object) entity);
     }
 
     /**
      * 解析命中目标。
      * <p>
-     * 若 hitEntity 实现了 {@link BFHitResolver}，执行精确验证并返回修正后的目标与几何。
-     * 否则，若 hitEntity 自身是 {@link BFHurtTarget}，直接包装返回。
+     * 若命中对象实现了 {@link BFHitResolver}，执行精确验证并返回修正后的目标与几何；
+     * 否则若其自身是 {@link BFHurtTarget}，直接包装返回；两者都不是时返回 null。
      * 返回 null 表示未命中（投射物应继续飞行）。
      * <p>
      * 典型调用模式（武器模组侧）：
@@ -298,27 +310,39 @@ public final class BFDamageApi {
      * BFDamageApi.hurt(resolved.actualTarget(), ctx);
      * }</pre>
      *
-     * @param hitEntity 原版碰撞检测命中的实体
-     * @param hitPoint  原版报告的命中点
-     * @param delta     搜索矢量，其模为搜索距离上限（m），方向为命中方向
+     * @param hit      命中对象（实体、物理体属主或其他包装体）
+     * @param hitPoint 原版报告的命中点
+     * @param delta    搜索矢量，其模为搜索距离上限（m），方向为命中方向
      * @return 解析结果；{@code null} 表示未命中
      */
     @Nullable
-    public static BFHitResolveResult resolveHitTarget(
-            Entity hitEntity, Vec3 hitPoint, Vec3 delta) {
-        if (hitEntity instanceof BFHitResolver resolver) {
+    public static BFHitResolveResult resolveHitTarget(Object hit, Vec3 hitPoint, Vec3 delta) {
+        if (hit instanceof BFHitResolver resolver) {
             return resolver.resolveHit(hitPoint, delta);
         }
-        if (hitEntity instanceof BFHurtTarget bf) {
+        if (hit instanceof BFHurtTarget bf) {
             return new BFHitResolveResult(bf, hitPoint, Vec3.ZERO);
         }
         return null;
     }
 
     /**
+     * {@link #resolveHitTarget(Object, Vec3, Vec3)} 的实体版重载。
+     *
+     * @deprecated 请改用 {@link #resolveHitTarget(Object, Vec3, Vec3)}；本重载仅作转发，
+     *             保留是为了让已编译的下游模组按实体描述符查找方法时不抛
+     *             {@code NoSuchMethodError}。
+     */
+    @Deprecated(since = "1.0.0.alpha.11")
+    @Nullable
+    public static BFHitResolveResult resolveHitTarget(Entity hitEntity, Vec3 hitPoint, Vec3 delta) {
+        return resolveHitTarget((Object) hitEntity, hitPoint, delta);
+    }
+
+    /**
      * 从原版 HitResult 解析命中目标。
      * <p>
-     * 相比 {@link #resolveHitTarget(Entity, Vec3, Vec3)}，
+     * 相比 {@link #resolveHitTarget(Object, Vec3, Vec3)}，
      * 本重载自动从 EntityHitResult 中提取命中实体和命中点。
      * 非 EntityHitResult（如方块命中）返回 null。
      *
@@ -330,7 +354,7 @@ public final class BFDamageApi {
     public static BFHitResolveResult resolveHitTarget(
             HitResult hitResult, Vec3 delta) {
         if (hitResult instanceof EntityHitResult ehr) {
-            return resolveHitTarget(ehr.getEntity(), hitResult.getLocation(), delta);
+            return resolveHitTarget((Object) ehr.getEntity(), hitResult.getLocation(), delta);
         }
         return null;
     }
