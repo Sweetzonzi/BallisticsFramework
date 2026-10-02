@@ -73,15 +73,22 @@ Component getPenetrationDisplayName() // 穿甲显示名（如"重型穿深"）
 // ========== 核心入口 ==========
 
 /**
- * 发起一次协议伤害。按优先级判断目标类型并进入四个分支之一：
+ * 发起一次协议伤害。按优先级判断目标类型并进入五个分支之一：
  *   分支0：目标同时是 BFHurtTarget + LivingEntity + 穿戴 BFArmorMaterial
  *          → 双层串联管线（护甲先拦截，本体后判定）
  *   分支1：target instanceof BFHurtTarget
  *          → 标准穿甲管线
+ *   分支1.5：target instanceof BFHitResolver（且不满足分支1）
+ *          → 用 ctx.hitPoint() 与 BFHitResolver.searchDelta(ctx.hitVelocity())
+ *            解析出实际目标，再经 contextForResolvedTarget 重建上下文后转发；
+ *            解析为未命中时返回 0f
  *   分支2：target instanceof LivingEntity && 穿戴 BFArmorMaterial 护甲
  *          → 通过 BFArmorAdapter 走管线（适配器模式）
  *   分支3：target instanceof Entity
  *          → 原版 entity.hurt(source, baseDamage) 回退
+ *   分支4：以上皆不满足 → 记录 error 日志并返回 0f（无分支可承接）
+ * 分支编号顺序即判定顺序，既有编号不重排。契约归属：
+ * docs/BFDamageApi-hurt解析器转发计划.md。
  * @param target 伤害目标
  * @param ctx    完整命中上下文
  * @return       实际造成的伤害量
@@ -106,6 +113,8 @@ static boolean deliverTo(Entity carrier, BFDamageContext ctx)
  * 不经过 BFHitResolver 路由。只做三件事：压栈 → 可选地过一遍承载者
  * 穿戴的 BFArmorMaterial 护甲层 → 交给原版 carrier.hurt()。护甲层跑过
  * 且折算结果大于 0 时，交给原版的是该折算结果，否则是 ctx.baseDamage()。
+ * 与发起入口 hurt 的分工：hurt 在目标是纯解析器时会先解析再转发，
+ * deliverTo 始终落在承载者自身（契约见 docs/BFDamageApi-hurt解析器转发计划.md §四）。
  * 调用时上下文栈顶不得已存在承载者自身；栈顶已是承载者时返回 false 并
  * 记录警告（判据即 hasContextFor，只比较栈顶；栈更深处的目标由调用方
  * 保证，见投递计划的 §5.8）。契约归属：docs/BFDamageApi-deliverTo投递计划.md。
@@ -176,6 +185,24 @@ static BFHitResolveResult resolveHitTarget(Object hit, Vec3 hitPoint, Vec3 delta
 @Deprecated(since = "1.0.0.alpha.11")
 @Nullable
 static BFHitResolveResult resolveHitTarget(Entity hitEntity, Vec3 hitPoint, Vec3 delta)
+
+/**
+ * 按解析结果重建"交给实际目标"的上下文。框架自身的两条转发路径
+ * （hurt 的分支1.5、BFHurtInterceptor 情况3）共用它，使"框架代劳解析"
+ * 与"调用方自行解析"走同一套规则：
+ *   命中点 = correctedHitPoint()（无条件替换——护甲侧 mapHitToSlot
+ *            用上下文命中点判定着弹槽位，入参命中点通常是代理 AABB 的交点）
+ *   法线   = correctedHitNormal()（为零矢量时保留原上下文的法线，零矢量是
+ *            "未修正"哨兵：resolveHitTarget 对纯 BFHurtTarget 即如此填充）
+ *   扩展   = 原容器拷贝为底，再并入解析结果的容器（后者覆盖同名键）
+ * 其余字段（source、baseDamage、hitVelocity、penetration、handler）原样保留。
+ * 外部模组一般不需要调用——按 resolveHitTarget 的示例自行构造上下文即可，
+ * 两者语义一致。契约归属：docs/BFDamageApi-hurt解析器转发计划.md。
+ * @param ctx      调用方传入的上下文（几何未经修正）
+ * @param resolved 解析结果
+ * @return         应用了修正几何与合并扩展的新上下文
+ */
+static BFDamageContext contextForResolvedTarget(BFDamageContext ctx, BFHitResolveResult resolved)
 
 /**
  * 从原版 HitResult 解析命中目标。自动从 EntityHitResult 中提取命中实体和命中点。
@@ -314,6 +341,11 @@ boolean contains(BFDamageExtensionKey<?> key)
 
 // 返回此扩展容器的浅拷贝（独立内部映射）
 BFDamageExtensions copy()
+
+// 把另一个容器的值合并进本容器：other 中显式设置过的键覆盖同名键，
+// 本容器其余键保持不变。other 为空容器时是空操作；other == this 时也是空操作。
+// 框架用它把解析结果的扩展数据并入转发上下文（先 copy 再 merge，故不修改来源）。
+void mergeFrom(BFDamageExtensions other)
 ```
 
 ---

@@ -126,6 +126,27 @@ public final class BFDamageExtensions {
     }
 
     /**
+     * 把另一个容器的值合并进本容器。
+     * <p>
+     * {@code other} 中显式设置过的键覆盖本容器中的同名键，本容器其余键保持不变。
+     * 传入空容器是合法的空操作。本容器自身不受 {@code other} 后续修改影响
+     * （只拷贝内容，不持有 {@code other} 的引用）。
+     * <p>
+     * 典型用途是叠加两层扩展数据：先以调用方已有的容器为底，再并入解析器返回的容器，
+     * 使解析器携带的命中特定字段（如部件标识）可用，同时不丢掉调用方原有的字段。
+     * 由于合并是"后写覆盖"，先合并的一方是被覆盖的底。
+     * <b>解析器返回的容器若与本容器是同一个实例，调用本方法不产生任何变化。</b>
+     *
+     * @param other 要并入的容器；其显式设置的键覆盖本容器中的同名键
+     * @throws NullPointerException other 为 null 时抛出
+     */
+    public void mergeFrom(BFDamageExtensions other) {
+        Objects.requireNonNull(other, "other");
+        if (other == this) return;
+        this.data.putAll(other.data);
+    }
+
+    /**
      * 读取扩展值。
      *
      * @param key  扩展 key

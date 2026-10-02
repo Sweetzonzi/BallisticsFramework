@@ -8,7 +8,7 @@
 # Output: build/libs/<mod_id>-<minecraft_version>-<loader>-<version>.jar
 #   (pattern from build.gradle archivesName; loader is "neoforge" or "forge")
 
-# Run all 19 GameTests (no GUI needed)
+# Run all 24 GameTests (no GUI needed)
 ./gradlew runGameTestServer
 # Exit code 0 = all pass; check output for "All N required tests passed"
 ```
@@ -17,7 +17,7 @@
 
 - **This repository carries one branch per loader**: `1.21.1-neoforge` (NeoForge, Java 21) and `1.20.1-forge` (Forge, Java 17). Platform details are branch-specific and authoritative in the checked-out branch's own config — read `gradle.properties` (`minecraft_version`, `neo_version` or `forge_version`, `mod_version`) and `build.gradle` (`archivesName`, `java.toolchain.languageVersion`). The branch name doubles as the release artifact's `-<loader>` suffix.
 - **mod_id**: `ballistics_framework`, package: `io.github.sweetzonzi.ballistics_framework` (identical on both branches)
-- Current version: `1.0.0.alpha.12` (from `gradle.properties`)
+- Current version: `1.0.0.alpha.13` (from `gradle.properties`)
 - License: LGPL 3.0
 - Wiki (MkDocs) at `docs/`; GitHub Pages deploys only from `1.21.1-neoforge` (see CI / Release)
 
@@ -44,14 +44,18 @@ Key entrypoints: `api/BFDamageApi.hurt(Object target, BFDamageContext ctx)` (ter
 Pipeline branches in `BFDamageApi.hurt()` (编号与源码注释、`docs/wiki/4-协议内幕/4.1-穿甲判定管线.md` 一致，判定顺序即编号顺序):
 0. **BFHurtTarget + BFArmorMaterial armor** → armor layer first (with armor-layer callbacks), then entity body (with body-layer callbacks) — double pipeline with dual callback rounds
 1. **BFHurtTarget** → full pipeline via target's methods
+1.5. **Pure BFHitResolver** (implements `BFHitResolver` but not `BFHurtTarget`) → `resolveHit(ctx.hitPoint(), BFHitResolver.searchDelta(ctx.hitVelocity()))`, then the damage is forwarded to the resolved actual target through branch 1 using a context rebuilt by `BFDamageApi.contextForResolvedTarget` (corrected hit point/normal applied, resolver extensions merged). Returns `0f` when the resolve reports a miss; contract in `docs/BFDamageApi-hurt解析器转发计划.md`
 2. **LivingEntity w/ BFArmorMaterial armor** → adapter wraps entity
-3. **Plain Entity** → vanilla `entity.hurt()` fallback
+3. **Plain Entity** → vanilla `entity.hurt()` fallback (which re-enters the interceptor, so it may still be routed by interceptor cases 2/3/4)
+4. **Neither BFHurtTarget nor Entity** → logs an error and returns `0f` (no branch can receive the damage)
+
+Both forwarding paths — branch 1.5 here and case 3 of `BFHurtInterceptor` — rebuild the forwarded context through `BFDamageApi.contextForResolvedTarget`, so the resolved `correctedHitPoint` / `correctedHitNormal` reach the actual target (armor-side `mapHitToSlot` maps slots from `ctx.hitPoint()`, and the incoming point is the proxy AABB intersection).
 
 Mixin interceptors (`EntityHurtMixin`, `LivingEntityHurtMixin`) catch non-protocol damage on protocol-aware targets, redirecting through `BFHurtInterceptor`.
 
 ## Testing quirks
 
-- GameTests live in `example/gametest/BallisticsGameTest.java` (19 scenarios: 8 penetration-pipeline + 11 carrier-delivery)
+- GameTests live in `example/gametest/BallisticsGameTest.java` (24 scenarios: 8 penetration-pipeline + 11 carrier-delivery + 5 resolver-forwarding)
 - `@PrefixGameTestTemplate(false)` is required on the test class on both loaders (the default prefixes the template name with the class name)
 - Template arena (5x3x5 stone bricks): on `1.21.1-neoforge` it is built programmatically in `@BeforeBatch`; on `1.20.1-forge` it is the data-pack structure `data/ballistics_framework/structures/empty_arena.nbt` (note the `structures/` directory, which 1.20.1 requires)
 - Use `CallbackRecorder` (inner class) for callback verification, not log scraping; the delivery scenarios use `DeliveryRecorder`, which counts `before*` / `on*` calls and forces `isOvermatch` / `isSpall` to false so armor-item call counts stay exact
@@ -74,6 +78,7 @@ Mixin interceptors (`EntityHurtMixin`, `LivingEntityHurtMixin`) catch non-protoc
 - Handler callbacks fire in two phases per penetration layer: `before*` callbacks (pre-`hurt()`) and `on*` callbacks (post-`hurt()`)
 - For composite targets (branch 0), callbacks fire for BOTH armor layer and entity body layer — two rounds of callbacks
 - Carrier delivery (`api/BFDamageApi.deliverTo`): pushes the carrier, runs only the carrier's `BFArmorMaterial` layer (skippable via `ignoreBFArmor`), never re-runs the body layer and never re-routes through `BFHitResolver`. The plan `docs/BFDamageApi-deliverTo投递计划.md` owns the exact contract
+- `BFDamageApi.hurt()` does route: a target implementing `BFHitResolver` without `BFHurtTarget` resolves through `resolveHit` and the damage is forwarded to the resolved actual target. The plan `docs/BFDamageApi-hurt解析器转发计划.md` owns the contract and the `hurt` / `deliverTo` split
 
 ## Documentation
 

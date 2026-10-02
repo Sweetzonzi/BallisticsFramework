@@ -3,6 +3,10 @@ plugins {
     id 'maven-publish'
     id 'idea'
     id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
+    // Mixin 注解处理器与 jar 清单注入。Forge 1.20.1 的 MixinPlatformAgentDefault 只从
+    // 清单的 MixinConfigs 属性读取配置，mods.toml 的 [[mixins]] 不会被它识别；
+    // 缺此插件时 Mixin 配置不注册、注入点静默失效。
+    id 'org.spongepowered.mixin' version '0.7.+'
 }
 
 version = mod_version
@@ -11,14 +15,22 @@ group = mod_group_id
 repositories {
     mavenLocal()
     mavenCentral()
+    // MixinGradle 的发布源（0.7.+ 为快照）
+    maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
 }
 
 base {
-    // Jar 文件名：ballistics_framework-1.20.1-forge-1.0.0.alpha.12.jar
+    // Jar 文件名：ballistics_framework-1.20.1-forge-1.0.0.alpha.13.jar
     archivesName = "${mod_id}-${minecraft_version}-forge"
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+// 生成 refmap 供生产环境（混淆名）解析注入点
+mixin {
+    add sourceSets.main, "${mod_id}.refmap.json"
+    config "${mod_id}.mixins.json"
+}
 
 minecraft {
     mappings channel: 'official', version: '1.20.1'
@@ -83,6 +95,15 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+}
+
+// 发布产物必须自带 MixinConfigs 清单属性：MixinGradle 只为开发运行注入
+// --mixin.config 参数，而 MixinPlatformAgentDefault 读取的是清单属性，
+// 缺它则发布后的 jar 里 Mixin 配置不被注册、注入点静默失效。
+jar {
+    manifest {
+        attributes(["MixinConfigs": "${mod_id}.mixins.json"])
+    }
 }
 
 // 模组元数据生成，从 templates/ 展开 ${} 占位符

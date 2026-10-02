@@ -34,7 +34,7 @@ The protocol's guiding principle is **wrap, don't replace** — it never bypasse
 ./gradlew build
 ```
 
-Output at `build/libs/ballistics_framework-1.21.1-neoforge-1.0.0.alpha.12.jar`.
+Output at `build/libs/ballistics_framework-1.21.1-neoforge-1.0.0.alpha.13.jar`.
 
 Dependency via flatDir local jar or source-set dependency; declare in `neoforge.mods.toml`.
 
