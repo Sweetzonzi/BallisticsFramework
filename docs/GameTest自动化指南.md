@@ -266,7 +266,7 @@ gradlew runGameTestServer
 
 测试完成后，控制台会输出 JUnit 风格的通过/失败统计：
 
-- **全部通过时**：显示类似 `All 19 required tests passed` 的消息
+- **全部通过时**：显示类似 `All 24 required tests passed` 的消息
 - **有失败时**：显示失败的测试方法名、异常信息、堆栈跟踪
 
 ---
@@ -275,10 +275,11 @@ gradlew runGameTestServer
 
 ### 4.1 测试场景总览
 
-BallisticsFramework 实现了 19 个 GameTest 场景：
+BallisticsFramework 实现了 24 个 GameTest 场景：
 
 - **场景 1~8**：穿甲判定管线。覆盖 `example-包实现计划.md` 中定义的管线验证矩阵，并补充了同级击穿、低级阻挡、越级击穿三种穿甲判定关系的独立测试。
 - **场景 9~19**：承载者投递（`BFDamageApi.deliverTo`）。覆盖"伤害先落在部件上、最终由所属实体承受"的拓扑，也是仓库内首次把"实体 `hurt` → mixin → 拦截器"这条链路纳入自动化验证——投递落地经过它。完整验收约定见 [BFDamageApi-deliverTo 投递计划](./BFDamageApi-deliverTo投递计划.md) §十。
+- **场景 20~24**：解析器转发。协议入口把伤害转发给纯解析器解析出的实际目标（分支 1.5）、解析为未命中时不回退到解析器自身，以及**修正几何与扩展数据被应用到转发上下文**（命中点替换、零法线回退、扩展合并，含拦截器路径）。完整验收约定见 [BFDamageApi-hurt解析器转发计划](./BFDamageApi-hurt解析器转发计划.md) §八。
 
 | 测试方法 | 场景 | 攻击参数 | 目标 | 预期伤害 | 对应管线分支 |
 |---------|------|---------|------|---------|------------|
@@ -301,24 +302,35 @@ BallisticsFramework 实现了 19 个 GameTest 场景：
 | `testDeliverZeroDamage` | 零伤害早退 | 18mm / 0HP | 承载者 + 15mm 护甲 | 无副作用 | `deliverTo` 零伤害早退 |
 | `testDeliverCarrierInvulnerable` | 原版免疫 | 18mm / 15HP | 承载者（`setInvulnerable`） | 不扣血，返回 false | 原版 `isInvulnerableTo` 拒绝 |
 | `testDeliverCarrierHurtCooldown` | 原版无敌帧窗口 | 18mm / 15HP | 承载者（`invulnerableTime > 10`、`lastHurt` 更大） | 不扣血，返回 false | 原版 20 tick 窗口拒绝 |
+| `testHurtRoutesToResolvedPart` | 协议入口转发到零件 | 60mm / 15HP | 宿主（纯 `BFHitResolver`）+ 零件 | 15.0 打在零件上 | **分支1.5** → 分支1 |
+| `testHurtResolveMissDealsNoDamage` | 解析为未命中不回退 | 60mm / 15HP | 宿主（未装配零件） | 0.0，宿主不掉血 | **分支1.5** 解析失败出口 |
+| `testHurtAppliesResolvedGeometryAndExtensions` | 修正几何与扩展被应用 | 60mm / 15HP | 宿主（报告命中点偏移与扩展）+ 零件 | 15.0；零件看到偏移后的命中点 | **分支1.5** 的上下文重建 |
+| `testZeroCorrectedNormalKeepsOriginal` | 零法线是"未修正"哨兵 | 60mm / 15HP | 宿主（只给命中点偏移） | 15.0；零件看到原法线 | 上下文重建的法线回退 |
+| `testInterceptorForwardingAppliesResolvedGeometry` | 拦截器转发同样应用修正 | 原版近战 12HP | 宿主（零修正对照 + 修正实验组） | 零件承受；宿主不掉血 | 拦截器情况3 的上下文重建 |
 
 ### 4.2 管线分支说明
 
-BallisticsFramework 的 `BFDamageApi.hurt()` 是管线唯一入口，内部按三路分支调度：
+BallisticsFramework 的 `BFDamageApi.hurt()` 是管线唯一入口，内部按优先级分派五路（编号顺序即判定顺序，完整契约见 [BFDamageApi-hurt解析器转发计划](./BFDamageApi-hurt解析器转发计划.md)）：
 
 ```
 BFDamageApi.hurt(Object target, BFDamageContext ctx)
     │
-    ├─ 分支1：target 是 BFHurtTarget → 直接走完整穿甲判定管线
-    │
     ├─ 分支0：target 是 BFHurtTarget + LivingEntity + BFArmorMaterial 护甲
     │   → 先走护甲管线 → 再走本体管线（复合目标双层防护）
+    │
+    ├─ 分支1：target 是 BFHurtTarget → 直接走完整穿甲判定管线
+    │
+    ├─ 分支1.5：target 是纯 BFHitResolver（不实现 BFHurtTarget）
+    │   → 解析出实际目标，重建上下文后转发；解析为未命中返回 0f
     │
     ├─ 分支2：target 是 LivingEntity + 穿戴 BFArmorMaterial 护甲
     │   → 通过 BFArmorAdapter 接管并走完整管线
     │
-    └─ 分支3：target 是普通 Entity（非协议感知）
-        → 调用 entity.hurt(source, amount) 走原版伤害
+    ├─ 分支3：target 是普通 Entity（非协议感知）
+    │   → 调用 entity.hurt(source, amount) 走原版伤害
+    │
+    └─ 分支4：以上皆不满足（既非 BFHurtTarget 也非 Entity）
+        → 记录 error 日志并返回 0f
 ```
 
 ### 4.3 各场景详细说明（场景 1~8）
@@ -399,7 +411,7 @@ BFDamageApi.hurt(Object target, BFDamageContext ctx)
 
 | 场景 | 在测什么 | 观测点 |
 |------|---------|--------|
-| 9 第一趟路由 | 协议入口不做路由；调用方自行 `resolveHitTarget` 后把伤害交给零件 | 零件 `hurt` 被调用、`resolveHit` 调用一次、宿主生命值不变 |
+| 9 第一趟路由 | 调用方自行 `resolveHitTarget` 后把伤害交给零件（协议入口也能自行解析，见场景 20） | 零件 `hurt` 被调用、`resolveHit` 调用一次、宿主生命值不变 |
 | 10 投递落地 | 第二趟把结算结果交给承载者 | 返回值 true、生命值下降、`hurt` 进入时 `hasContextFor(宿主)` 为真 |
 | 11 不重新路由 | 承载者即使同时是 `BFHitResolver` 也不会被重新解析 | `resolveHit` 调用次数在投递期内不增加、无栈溢出 |
 | 12 贴身护甲击穿 | 18mm 穿深对 15mm 护甲（同属 MEDIUM）→ 同级击穿 | `hurt` 收到 9.75、护甲层 `before*` / `on*` 各一次、三件套与 `afterHurt` 各一次、本体层 0 次 |
@@ -412,6 +424,22 @@ BFDamageApi.hurt(Object target, BFDamageContext ctx)
 | 19 无敌帧窗口 | `invulnerableTime > 10` 且不超过 `lastHurt` | 生命值不变，护甲层已跑且判定为击穿 |
 
 场景 18、19 的"读生命值而不只看布尔返回"是有意的：`deliverTo` 返回 `false` 有两种来源（护甲挡下 / 原版拒绝），只断言布尔值无法区分，因此每个用例都额外断言护甲层的判定结果。
+
+### 4.5 解析器转发场景（场景 20~24）
+
+逐条验收约定由 [BFDamageApi-hurt解析器转发计划](./BFDamageApi-hurt解析器转发计划.md) §八 拥有，本节只说明每个用例在测什么、靠什么观测。复用 `ExampleProxyEntity`（宿主兼解析者，记录 `resolveHit` / `hurt` 调用次数与 `hurt` 入参，并由 `setHitCorrection` 声明解析返回的修正几何）与 `TestPart`（零件，累计承受量，由 `getLastContext` 暴露它进入管线时看到的上下文）。五个用例都**不**预先调用 `resolveHitTarget`。
+
+| 场景 | 在测什么 | 观测点 |
+|------|---------|--------|
+| 20 协议入口转发到零件 | 纯解析器目标由 `BFDamageApi.hurt` 自行解析并转发（分支 1.5） | 返回值 15、零件承受 15、零件 `hurt` 一次、`resolveHit` 一次、宿主生命值不变、宿主 `hurt` 零次 |
+| 21 解析失败不落到自身 | 解析为未命中时协议伤害被丢弃，不回退为伤害落在解析器身上 | 返回值 0f、`resolveHit` 一次、宿主生命值不变、宿主 `hurt` 零次 |
+| 22 修正几何与扩展被应用 | 转发上下文由 `contextForResolvedTarget` 重建 | 零件看到的命中点 = 入参命中点 + 偏移；法线 = 修正法线；解析器扩展键可读；调用方扩展字段未丢；调用方容器仍可用 |
+| 23 零修正法线回退 | `correctedHitNormal = Vec3.ZERO` 是"未修正"哨兵 | 零件看到的法线 = 原上下文法线且非零 |
+| 24 拦截器转发同样应用修正 | 协议外伤害经 mixin → 拦截器情况 3 | 以"零修正"为对照：实验组命中点 = 对照组 + 偏移；法线为修正法线；宿主不掉血 |
+
+场景 20 与场景 9 是同一拓扑的两条入口：场景 9 由调用方先 `resolveHitTarget` 再把伤害交给零件，场景 20 把宿主直接交给协议入口、由框架解析。场景 21 钉住"解析失败**不**回退到目标自身"这条取舍——若把分支 1.5 写成"解析失败就退回原版回退分支"，21 会因为宿主掉血而失败。
+
+场景 22~24 共同钉住"转发必须应用解析出的修正几何"。它们对"沿用入参上下文"这一实现方式是敏感的：场景 22 会看到代理 AABB 的交点而不是偏移后的点；场景 24 的对照组设计还顺带说明近战来源的入参命中点是攻击者眼位（`searchRay` 的活体近战分支），不是零值——因此断言的是"相对对照组的偏移量"，而不是某个绝对坐标。
 
 ---
 
@@ -428,7 +456,7 @@ BFDamageApi.hurt(Object target, BFDamageContext ctx)
 [GameTest] Running test: ballistics_framework:testMeleeSameLevelPenetration
 [GameTest] ✓ ballistics_framework:testMeleeSameLevelPenetration
 ...
-[GameTest] All 19 required tests passed
+[GameTest] All 24 required tests passed
 ```
 
 退出码为 0，表示全部通过。
@@ -502,7 +530,7 @@ Agent 应依据以下规则判断测试是否通过：
 
 1. **退出码**：0 = 全部通过，非 0 = 至少一个测试失败
 2. **控制台关键词**：
-   - 含 `All 19 required tests passed` → 全部通过
+   - 含 `All 24 required tests passed` → 全部通过
    - 含 `failed` 或 `GameTestAssertException` → 有失败
 3. **详细结果**：可解析控制台 JUnit 风格输出获取每个测试方法的状态
 

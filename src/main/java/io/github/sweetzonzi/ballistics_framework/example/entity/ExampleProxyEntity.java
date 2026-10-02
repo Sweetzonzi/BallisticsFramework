@@ -2,6 +2,7 @@ package io.github.sweetzonzi.ballistics_framework.example.entity;
 
 import com.mojang.logging.LogUtils;
 import io.github.sweetzonzi.ballistics_framework.api.BFDamageApi;
+import io.github.sweetzonzi.ballistics_framework.api.BFDamageExtensions;
 import io.github.sweetzonzi.ballistics_framework.api.BFHitResolveResult;
 import io.github.sweetzonzi.ballistics_framework.api.BFHitResolver;
 import io.github.sweetzonzi.ballistics_framework.api.BFHurtTarget;
@@ -46,6 +47,18 @@ public class ExampleProxyEntity extends PathfinderMob implements BFHitResolver {
     private float lastHurtAmount;
     private boolean hasContextAtHurt;
 
+    /**
+     * {@link #resolveHit} 返回的修正命中点相对入参命中点的偏移；{@link Vec3#ZERO} 表示原样透传。
+     * 用于验证"解析出的修正几何会被应用到转发上下文"。
+     */
+    private Vec3 hitCorrection = Vec3.ZERO;
+
+    /**
+     * {@link #resolveHit} 返回的修正命中面法线；{@link Vec3#ZERO} 表示未修正
+     * （转发方应保留原上下文的法线）。
+     */
+    private Vec3 normalCorrection = Vec3.ZERO;
+
     public ExampleProxyEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
         LOGGER.debug("[BF-Example] 代理实体已创建: pos={}", position());
@@ -77,12 +90,28 @@ public class ExampleProxyEntity extends PathfinderMob implements BFHitResolver {
         return this.part;
     }
 
+    /**
+     * 设置 {@link #resolveHit} 返回的修正几何。
+     * <p>
+     * 用于验证"解析出的修正几何会被应用到转发上下文"：转发方应把
+     * {@code 入参命中点 + hitOffset} 与 {@code hitNormal} 写进交给实际目标的上下文。
+     *
+     * @param hitOffset 相对入参命中点的偏移；{@link Vec3#ZERO} 表示原样透传
+     * @param hitNormal 修正后的命中面法线；{@link Vec3#ZERO} 表示未修正
+     */
+    public void setHitCorrection(Vec3 hitOffset, Vec3 hitNormal) {
+        this.hitCorrection = hitOffset;
+        this.normalCorrection = hitNormal;
+    }
+
     // ======================== BFHitResolver 实现 ========================
 
     /**
-     * 把命中解析到持有的零件上，几何原样透传。
+     * 把命中解析到持有的零件上，并按 {@link #setHitCorrection} 报告的修正几何返回。
      * <p>
      * 幂等且无副作用（接口契约），但会计数以便验证"同一次命中只解析一次"。
+     * 零件若实现 {@link ResolveExtensionsCarrier}，其扩展容器会随结果一并返回——
+     * 这是给测试夹具用的窄接口，生产实现自行构造 {@link BFDamageExtensions} 即可。
      *
      * @return 零件；未装配时返回 null（视为未命中）
      */
@@ -92,7 +121,22 @@ public class ExampleProxyEntity extends PathfinderMob implements BFHitResolver {
         this.resolveHitCalls++;
         BFHurtTarget actual = this.part;
         if (actual == null) return null;
-        return new BFHitResolveResult(actual, hitPoint, Vec3.ZERO);
+        BFDamageExtensions exts = (actual instanceof ResolveExtensionsCarrier carrier)
+                ? carrier.bf$resolveExtensions() : new BFDamageExtensions();
+        return new BFHitResolveResult(actual, hitPoint.add(this.hitCorrection),
+                this.normalCorrection, exts);
+    }
+
+    /**
+     * 零件侧的窄接口：声明本零件希望随解析结果返回的扩展容器。
+     * <p>
+     * 真实模组的解析器会自行构造 {@link BFDamageExtensions}（例如写入子部件标识）；
+     * 本接口只是示例夹具把这件事外置的通道，不属于协议的一部分。
+     */
+    public interface ResolveExtensionsCarrier {
+
+        /** @return 本零件希望随解析结果返回的扩展容器 */
+        BFDamageExtensions bf$resolveExtensions();
     }
 
     // ======================== hurt 记录 ========================

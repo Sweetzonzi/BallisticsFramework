@@ -107,6 +107,14 @@ Vec3 hitVelocity = projectileEntity.getDeltaMovement().scale(20.0);
 
 在 `createContextFromVanilla` 中对 `DamageSource` 类型做筛选——对岩浆、溺水、虚空、魔法等不适合走穿甲管线的伤害类型返回 `null`，只对物理攻击和爆炸返回上下文。
 
+### Q: 我把代理对象（实现 BFHitResolver 但不是 BFHurtTarget）交给 BFDamageApi.hurt()，伤害去哪了？
+
+协议入口会先调用它的 `resolveHit` 解析出实际目标，再把伤害转发过去，因此伤害落在实际目标上而不是代理自身（分支 1.5，见 [2.6 代理实体与命中解析](../2-武器侧开发/2.6-代理实体与命中解析.md)）。若返回 0，说明 `resolveHit` 返回了 `null`（视为未命中），此时协议**不会**把伤害落到代理身上——请检查代理是否已装配好它的实际目标。
+
+### Q: 我在日志里看到 "BFDamageApi.hurt 的目标既不是 BFHurtTarget 也不是 Entity"，是什么意思？
+
+你交给 `hurt` 的对象既没有实现 `BFHurtTarget`（无法回答穿深与伤害），也不是 `Entity`（没有原版回退可用），因此没有任何分支能承接这次伤害，协议记录 error 并返回 0。两种修法：让该对象实现 `BFHurtTarget`，或先用 `BFDamageApi.resolveHitTarget` 解析出实际目标再对实际目标调用 `hurt`。
+
 ***
 
 ## 回调

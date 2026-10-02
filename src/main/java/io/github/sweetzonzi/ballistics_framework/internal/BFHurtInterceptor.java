@@ -31,7 +31,9 @@ public final class BFHurtInterceptor {
      *   <li>实体自身是 BFHurtTarget → 通过 createContextFromVanilla 接管；
      *       返回 null 则继续走到情况 3（若其实也是 BFHitResolver）</li>
      *   <li>自身是 BFHitResolver 但不走情况 2 → 解析出实际目标并转发伤害；
-     *       投射物来源直接取用 onHit 阶段已完成的解析结果，其余来源按伤害来源构造几何后解析</li>
+     *       投射物来源直接取用 onHit 阶段已完成的解析结果，其余来源按伤害来源构造几何后解析；
+     *       转发用的上下文由 {@link BFDamageApi#contextForResolvedTarget} 按解析结果重建，
+     *       使修正几何与扩展数据对实际目标及其护甲层可见</li>
      *   <li>实体穿戴了 BFArmorMaterial 护甲 → 通过适配器接管</li>
      *   <li>其他 → 放行原版流程</li>
      * </ol>
@@ -90,6 +92,11 @@ public final class BFHurtInterceptor {
             BFDamageContext ctx = actual.createContextFromVanilla(source, amount);
             // 目标不接受协议外伤害：交回原版流程
             if (ctx == null) return;
+
+            // 应用解析出的修正几何与扩展数据——护甲侧的 mapHitToSlot 用命中点判定着弹槽位，
+            // 而这里构造出的上下文只带伤害来源信息，几何必须取自解析结果。
+            // 与 BFDamageApi.hurt 的分支1.5 共用同一条重建规则。
+            ctx = BFDamageApi.contextForResolvedTarget(ctx, resolved);
 
             // ctx 非 null 即"协议已接管这次伤害"：必须调用 setReturnValue 取消原版流程，
             // 否则原版 hurt 会继续执行，伤害将落到代理自身。

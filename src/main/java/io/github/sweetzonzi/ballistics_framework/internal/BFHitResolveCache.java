@@ -27,8 +27,9 @@ import org.jetbrains.annotations.Nullable;
  * 缓存是一次性的：读取即清空，且仅在命中实体身份匹配时返回。
  * <p>
  * 被缓存的 {@link BFHitResolveResult} 会连同其中的 {@code extensions} 容器一起
- * 存活到 {@code hurt} 阶段，取用方只能读 {@link BFHitResolveResult#actualTarget()}，
- * 不得读写该容器。
+ * 存活到 {@code hurt} 阶段。取用方按 {@code BFDamageApi#contextForResolvedTarget} 的规则
+ * 读取 {@link BFHitResolveResult#actualTarget()}、修正几何与该容器（合并方向为"解析器覆盖同名键"），
+ * 但<b>不得向该容器写入</b>——它可能与解析器持有的实例是同一个。
  */
 public interface BFHitResolveCache {
 

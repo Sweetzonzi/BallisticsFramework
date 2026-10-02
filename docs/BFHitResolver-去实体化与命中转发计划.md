@@ -353,8 +353,9 @@ package io.github.sweetzonzi.ballistics_framework.internal;
  * 缓存是一次性的：读取即清空，且仅在命中实体身份匹配时返回。
  *
  * 被缓存的 {@link BFHitResolveResult} 会连同其中的 {@code extensions} 容器一起
- * 存活到 {@code hurt} 阶段，取用方只能读 {@code actualTarget()}，
- * 不得读写该容器（理由见 §九.4）。
+ * 存活到 {@code hurt} 阶段。取用方按 {@code BFDamageApi.contextForResolvedTarget}
+ * 的规则读取 {@code actualTarget()}、修正几何与该容器（合并方向为"解析器覆盖同名键"），
+ * 但**不得向该容器写入**——它可能与解析器持有的实例是同一个（理由见 §九.4）。
  */
 public interface BFHitResolveCache {
 
@@ -485,7 +486,7 @@ if (self instanceof BFHitResolver) {
 
 - **`ctx != null` 即接管，不看 `dealt`**：这是本分支唯一与"原版伤害是否落到 `self`"相关的开关。写成 `> 0f` 会让"被挡住的命中"改打代理自己（`docs/终点弹道设计文档.md` §11.3 路径 5 已把该语义写成"ctx ≠ null 即接管，无论 dealt 为多少"）。情况 2/4 的现有代码也写作 `dealt > 0f`，Step 4 落地时建议一并核对（属于既有落差，不在本计划强制范围内）。
 - **代理对象不应承载生命值**：即使上面改对了，`cir.setReturnValue(false)` 的路径（假阳性）与原版放行路径（无源位置伤害、解析回自身、`ctx == null`）仍会让 `self` 承受原版伤害。代理必须是无血量/无敌的技术性载体，否则"被挡住的一发"或"虚空伤害"就能摧毁代理。该约束登记在 §七.5。
-- **投射物来源直接用缓存结果，不重复解析**：能取到缓存就说明 `onHit` 阶段已经把这次命中判定为真命中，结果对本次命中事件有效。`hurt` 阶段因此不需要重建几何，也不会出现两次判定结论相反的情况（§2.4）。取用方只读取 `result.actualTarget()`，不消费 `result.extensions()`。
+- **投射物来源直接用缓存结果，不重复解析**：能取到缓存就说明 `onHit` 阶段已经把这次命中判定为真命中，结果对本次命中事件有效。`hurt` 阶段因此不需要重建几何，也不会出现两次判定结论相反的情况（§2.4）。取用方读取 `result.actualTarget()`、`result.correctedHitPoint()`、`result.correctedHitNormal()` 与 `result.extensions()`，由 `BFDamageApi.contextForResolvedTarget` 把它们应用到一个新的转发上下文上——几何修正与扩展合并的契约由 [BFDamageApi-hurt解析器转发计划](./BFDamageApi-hurt解析器转发计划.md) 持有。缓存容器因此是**只读来源**（见 §九.4），`mergeFrom` 只读取它的内容、不写入。
 - **其余来源按伤害类别构造几何后判定**：`source.getDirectEntity()` 不是该投射物时（近战 / 爆炸 / 其他），由 `BFHitResolver.searchRay` 构造几何（爆炸 / 投射物 / 活体近战 / 其他有源位置 / 无源位置，见 Step 1），再交给 `resolveHitTarget`。无源位置伤害直接放行，不猜测。
 - **缓存的硬性约束**（违反任一条都会让穿透投射物产生错误判定）：
   1. **单次命中内有效**：缓存记录的是当次命中的判定结果；同一次命中可以直接复用。
@@ -596,7 +597,7 @@ if (self instanceof BFHitResolver) {
 1. **（已核实）** `DamageSource#getSourcePosition()` 存在，且实现为"显式记录的位置优先，否则取 `getDirectEntity().position()`，无 direct entity 时返回 null"（对照 `build/moddev/artifacts/neoforge-21.1.219-sources.jar` 内 `net.minecraft.world.damagesource.DamageSource#getSourcePosition`，方法带 `@Nullable`）。投射物伤害源的 direct entity 就是该投射物，故 Step 1 的投射物分支直接取 `projectile.position()` 而不另设回退；其他分支依赖 `radialRay` 的 null 早退来处理"无源位置"与"无 direct entity"两种 null 情况，与实现一致。
 2. 活体近战分支的固定搜索长度取 5.0 m 是否足够覆盖常见近战距离与实体 AABB 尺寸。该值可按实测调整，不改变分派结构。
 3. **缓存的写入覆盖率**：需确认会触发情况 3 的投射物来源都在 `onHit` 阶段写入了结果。真实条件是 **"`Projectile#onHit` 被调用到"**（缓存写入在该方法 HEAD）——子类覆写 `onHit` 但只要调用或不调用 `super.onHit` 都不影响写入时机；真正绕过缓存的是完全不经过 `Projectile#onHit` 的实体命中路径（自定义投射物自行结算伤害）与伤害延迟结算的来源。未写入的来源会回落 `searchRay`，**其后果按 §2.4 是伤害去向错误，而不是精度下降**，处理方式见 §七.3。
-4. **缓存结果的使用面**：取用方只读取 `actualTarget()`，不得调用 `extensions()`。`BFDamageExtensions` 是可变容器（`set()` 写入内部 `HashMap`，`copy()` 是浅拷贝），把 `BFHitResolveResult` 存进缓存等于把解析器的扩展容器引用延长到 `hurt` 阶段之后。因此：解析器不应返回"之后还会被自己修改"的容器；若确实要复用，应返回 `extensions().copy()`。同一 `BFHitResolveResult` 也没有其它读取方（`BFHurtInterceptor` 只取 `actualTarget()`，缓存在 `onHit`/`hurt` 之间不经过第三方）。
+4. **缓存结果的使用面**：取用方读取 `actualTarget()`、`correctedHitPoint()`、`correctedHitNormal()` 与 `extensions()`，把它们应用到一个新的转发上下文（几何替换 + `mergeFrom` 合并），契约见 [BFDamageApi-hurt解析器转发计划](./BFDamageApi-hurt解析器转发计划.md)。`BFDamageExtensions` 是可变容器（`set()` 写入内部 `HashMap`，`copy()` 是浅拷贝），把 `BFHitResolveResult` 存进缓存等于把解析器的扩展容器引用延长到 `hurt` 阶段之后。因此：**取用方不得向该容器写入**——`contextForResolvedTarget` 先 `copy()` 一层再合并，写入的是拷贝；解析器也不应返回"之后还会被自己修改"的容器，若确实要复用，应返回 `extensions().copy()`。
 
 ## 十、实施顺序与优先级
 

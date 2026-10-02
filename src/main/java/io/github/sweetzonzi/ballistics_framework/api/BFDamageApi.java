@@ -45,10 +45,20 @@ public final class BFDamageApi {
      * 对于适配器路径（穿戴 {@link BFArmorMaterial} 护甲的普通 {@link LivingEntity}），
      * 此行为由 {@code BFArmorAdapter.hurt()} 的 Javadoc 详细说明。
      * <p>
+     * 目标是纯解析器（实现 {@link BFHitResolver} 但不实现 {@link BFHurtTarget}）时，
+     * 先用上下文自带的命中几何（{@link BFDamageContext#hitPoint()} 与
+     * {@link BFHitResolver#searchDelta(Vec3) searchDelta(ctx.hitVelocity())}）解析出实际目标，
+     * 再按 {@link #contextForResolvedTarget} 用解析结果重建上下文并转发——
+     * 解析器不承载伤害，只回答"打中了谁"，而它给出的修正几何与扩展数据会被应用到转发上下文。
+     * 解析判定为未命中时返回 0f；转发出去的伤害由 {@link BFHurtTarget} 分支承接。
+     * <p>
      * 对于普通 {@link Entity}（无协议感知），直接调用原版 {@code entity.hurt(source, baseDamage)}。
      * 若上下文中有 handler，会通过 {@link BFDamageHandler#onNormalEntityHit} 回调告知原始伤害和成功标志
+     * <p>
+     * 目标既不是 {@link BFHurtTarget} 也不是 {@link Entity} 时没有任何分支能承接这次伤害，
+     * 记录 error 日志后返回 0f。
      *
-     * @param target 伤害目标（{@link BFHurtTarget} 或普通 {@link Entity}）
+     * @param target 伤害目标（{@link BFHurtTarget}、{@link BFHitResolver} 或普通 {@link Entity}）
      * @param ctx    完整命中上下文
      * @return 协议层认为已造成的伤害量。注意：由于原版护甲二次减免，
      *         此值 ≥ 实体实际减少的 HP。调用方如需精确记录伤害数值，
@@ -124,6 +134,18 @@ public final class BFDamageApi {
                 }
                 return dealt;
             }
+            // 分支1.5：纯解析器 — 实现 BFHitResolver 但不实现 BFHurtTarget
+            //   走到这里说明目标已声明"我不承载伤害，但我知道打中了谁"：先解析再转发。
+            //   解析结果的实际目标静态类型即 BFHurtTarget，转发后由分支1 承接，递归深度恒为 1。
+            //   本判据排在 BFHurtTarget 分支之后，与 BFHurtInterceptor 的分支优先级一致。
+            if (target instanceof BFHitResolver resolver) {
+                BFHitResolveResult resolved = resolver.resolveHit(
+                        ctx.hitPoint(), BFHitResolver.searchDelta(ctx.hitVelocity()));
+                // 解析判定为未命中（拦截器情况 3 的假阳性出口同义）：本次协议调用不造成伤害。
+                // 不回退到"伤害落在解析器自身"——协议伤害没有可回退的原版语义。
+                if (resolved == null) return 0f;
+                return hurt(resolved.actualTarget(), contextForResolvedTarget(ctx, resolved));
+            }
             // 分支2：LivingEntity 穿戴了 BFArmorMaterial 护甲 → 适配器模式
             if (target instanceof LivingEntity living && BFArmorAdapter.hasBFArmor(living)) {
                 BFArmorAdapter adapter = new BFArmorAdapter(living);
@@ -155,6 +177,12 @@ public final class BFDamageApi {
                 }
                 return success ? ctx.baseDamage() : 0f;
             }
+            // 分支4：既不是 BFHurtTarget、也不是 Entity — 没有任何分支能承接这次伤害。
+            // 记录 error 而非静默返回：目标类型错误是配置问题，无声丢弃会让调用方以为伤害已生效。
+            LOGGER.error("BFDamageApi.hurt 的目标既不是 BFHurtTarget 也不是 Entity，本次伤害被丢弃："
+                            + "class={}。请让目标实现 BFHurtTarget，"
+                            + "或先经 BFDamageApi.resolveHitTarget 解析出实际目标",
+                    target.getClass().getName());
             return 0f;
         } finally {
             BFContextStack.INSTANCE.pop();
@@ -204,7 +232,11 @@ public final class BFDamageApi {
      * <b>绕行范围</b>：本方法不判定目标身份、不选取分支、不执行承载者作为
      * {@link BFHurtTarget} 的本体层（{@code resolvePenetration} /
      * {@code calculateFinalDamage}），也不经过 {@link BFHitResolver} 的路由——承载者
-     * 即使是解析器也不会被重新解析。两个重载的差别只有一处：{@code ignoreBFArmor} 为
+     * 即使是解析器也不会被重新解析。这是本方法与发起入口 {@link #hurt(Object, BFDamageContext)}
+     * 的分工所在：发起的语义是"把这次伤害交给它应该落到的目标"，因此目标是纯解析器时
+     * 会先解析再转发；投递的语义是"这次结算结果由这个承载实体落地"，承载者已在上一趟
+     * 承担过解析职责，再路由一次就会回到触发它的那个对象。
+     * 两个重载的差别只有一处：{@code ignoreBFArmor} 为
      * true 时再额外跳过承载者穿戴的 {@link BFArmorMaterial} 护甲层及其回调。
      * <p>
      * 落地仍走原版 {@code hurt}，因此无敌帧、原版护甲、附魔、荆棘反伤与伤害事件
@@ -267,6 +299,55 @@ public final class BFDamageApi {
         } finally {
             BFContextStack.INSTANCE.pop();
         }
+    }
+
+    /**
+     * 由一个解析结果构造"交给实际目标"的上下文——{@link #hurt} 的分支1.5 与
+     * {@code BFHurtInterceptor} 的情况3 共用，使"框架代替调用方解析"与"调用方自行解析"
+     * 走同一套几何修正与扩展合并规则。
+     * <p>
+     * 本方法按 {@link #resolveHitTarget(Object, Vec3, Vec3)} 的 Javadoc 所载标准用法重建上下文：
+     * <ol>
+     *   <li><b>命中点</b>取 {@link BFHitResolveResult#correctedHitPoint()}，无条件替换。
+     *       该字段恒为有效的世界坐标——{@code resolveHit} 的实现惯例是"无修正时原样回传入参"，
+     *       而 {@link #resolveHitTarget(Object, Vec3, Vec3)} 对纯 {@link BFHurtTarget}
+     *       也是原样包装给定命中点。命中点是 {@link BFArmorMaterial#mapHitToSlot}
+     *       判定着弹槽位的输入，代理的 AABB 交点通常不是子部件上的真实着弹点，故不可沿用旧值。</li>
+     *   <li><b>命中面法线</b>取 {@link BFHitResolveResult#correctedHitNormal()}，
+     *       仅当其非零时替换。零矢量是既有的"未修正"哨兵值
+     *       （{@link #resolveHitTarget(Object, Vec3, Vec3)} 对纯 {@link BFHurtTarget} 即填
+     *       {@link Vec3#ZERO}），直接写入会让读取者拿到零矢量而算出无意义的入射角，
+     *       此时保留原上下文的法线。</li>
+     *   <li><b>扩展数据</b>以原容器的拷贝为底，再并入解析结果的容器
+     *       （{@link BFDamageExtensions#mergeFrom}，后者覆盖同名键）。先拷贝保证不修改调用方
+     *       传入的容器；解析器携带的命中特定字段（如部件标识）因此对下游回调可见，
+     *       而调用方原有的字段不丢。</li>
+     * </ol>
+     * source、baseDamage、hitVelocity、penetration、handler 原样保留。
+     * <p>
+     * 本方法是公开的，因为 {@code BFHurtInterceptor} 位于 {@code internal} 包、需要跨包调用；
+     * 它服务于框架自身的两条转发路径。外部模组一般不需要调用——按
+     * {@link #resolveHitTarget(Object, Vec3, Vec3)} 的示例自行构造上下文即可，两者语义一致。
+     *
+     * @param ctx      调用方传入的上下文（几何未经修正）
+     * @param resolved 解析结果
+     * @return 应用了修正几何与合并扩展的新上下文
+     */
+    public static BFDamageContext contextForResolvedTarget(BFDamageContext ctx, BFHitResolveResult resolved) {
+        Vec3 normal = resolved.correctedHitNormal();
+        Vec3 hitNormal = normal.lengthSqr() > 0.0 ? normal : ctx.hitNormal();
+        BFDamageExtensions extensions = ctx.extensions().copy();
+        extensions.mergeFrom(resolved.extensions());
+        return BFDamageContext.builder()
+                .source(ctx.source())
+                .baseDamage(ctx.baseDamage())
+                .hitVelocity(ctx.hitVelocity())
+                .hitPoint(resolved.correctedHitPoint())
+                .hitNormal(hitNormal)
+                .penetration(ctx.penetration())
+                .extensions(extensions)
+                .handler(ctx.getHandler())
+                .build();
     }
 
     /**

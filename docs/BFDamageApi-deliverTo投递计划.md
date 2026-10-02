@@ -153,7 +153,7 @@ hurt(host, ctx)                       push(host)                   栈顶 = host
 
 第二趟的入口形态与第一趟的差别有两处。**其一**，`BFDamageApi.hurt(carrier, ctx)` 会在投递期执行承载者作为 `BFHurtTarget` 的**本体层**（`resolvePenetration` / `calculateFinalDamage`）；到达投递时点时弹体参数已被折算成"伤害量 + 残余穿深"两个标量，"再穿一层本体装甲"既无法判定，又会让已折算的数值再叠一遍。**其二**，投递需要一个"跳过贴身护甲层"的显式开关（§5.2 的 `ignoreBFArmor`）。
 
-需要说明的是：**协议管线本身不做路由。** `BFDamageApi.hurt` 的方法体内不调用 `resolveHit` / `resolveHitTarget`——`BFHitResolver` 只出现在 `api/BFDamageApi.java#isProtocolAware` 与 `api/BFDamageApi.java#resolveHitTarget` 两处解析方法中，而 `hurt` 在进入分支判定之前就已完成压栈。因此"第二趟若走 `hurt` 会被重新路由回部件"这个说法不成立；选择 `deliverTo` 的理由是上面那两处形态差别。
+需要说明的是：**投递本身不做路由。** `BFDamageApi.deliverTo` 的方法体内不调用 `resolveHit` / `resolveHitTarget`：它把结算结果直接交给承载实体的原版 `hurt`，承载者即使是解析器也不会被重新解析。**这与发起入口的形态不同**——`api/BFDamageApi.java#hurt` 在目标是纯解析器（实现 `BFHitResolver` 但不实现 `BFHurtTarget`）时会先用上下文几何解析出实际目标再转发，见 [BFDamageApi-hurt解析器转发计划.md](./BFDamageApi-hurt解析器转发计划.md) §四。两个入口因此对同一个解析器代理有不同的归属：`hurt` 把伤害交给解析出的实际目标，`deliverTo` 让它落在承载者自己身上。选择 `deliverTo` 的理由仍是上面那两处形态差别（不跑本体层、可跳过贴身护甲层）；而"投递不得被路由回起点"（§3.3）是 `deliverTo` 自身的约束，与 `hurt` 的分支无关。
 
 **投递是独立的协议调用，而非第一趟的回调**：下游的结算相位已经把第二趟独立出来。兄弟仓库 Machine-Max 的 `docs/伤害结算相位与装配体投递修改计划.md` §5.1 把零件伤害结算放在 `LevelTickEvent.Post`，§5.4 的 `common/mech/vehicle/IPartAssembly.java#onPartDamage(Part, List)` 把"本零件本次结算产生的全部命中记录"通告给装配体，Machine-Max 的 `docs/伤害结算相位与装配体投递修改计划.md` §七明确"不规定投递"，投递由装配体实现自行扇出。
 
@@ -542,7 +542,7 @@ private static Object stackTargetOf(Object target) {
 
 既有 8 个 GameTest 全部是手工构造 `ctx` 后直接调用 `BFDamageApi.hurt`，没有覆盖"`Entity#hurt` → mixin → 拦截器"这条链路。场景 2、3、8 是首次把该链路纳入自动化验证，落地时的调试成本会高于既有场景。
 
-**落地形态**：上述 9 条场景在 `example/gametest/BallisticsGameTest.java` 中落为 11 个 `@GameTest` 方法——第 9 条的三条边界（零伤害、原版免疫、20 tick 窗口）各需要一个未被触碰过的承载者，故拆成三个用例；与既有 8 个场景合计 19 个。运行 `./gradlew runGameTestServer`，全绿时输出 `All 19 required tests passed`，其中场景 4/5 的护甲层结果可在日志中对照 `投递期护甲 afterHurt: ... result=PENETRATED, finalDamage=9.75` 与 `... result=BLOCKED, finalDamage=0.0` 两行。
+**落地形态**：上述 9 条场景在 `example/gametest/BallisticsGameTest.java` 中落为 11 个 `@GameTest` 方法——第 9 条的三条边界（零伤害、原版免疫、20 tick 窗口）各需要一个未被触碰过的承载者，故拆成三个用例；与既有 8 个场景合计 19 个，另有 5 个解析器转发场景（场景 20~24，契约见 [BFDamageApi-hurt解析器转发计划.md](./BFDamageApi-hurt解析器转发计划.md)），当前共 24 个。运行 `./gradlew runGameTestServer`，全绿时输出 `All 24 required tests passed`，其中场景 4/5 的护甲层结果可在日志中对照 `投递期护甲 afterHurt: ... result=PENETRATED, finalDamage=9.75` 与 `... result=BLOCKED, finalDamage=0.0` 两行。
 
 ## 附录 A：设计决策记录
 

@@ -13,7 +13,7 @@ repositories {
 }
 
 base {
-    // Jar 文件名：ballistics_framework-1.21.1-neoforge-1.0.0.alpha.12.jar
+    // Jar 文件名：ballistics_framework-1.21.1-neoforge-1.0.0.alpha.13.jar
     archivesName = "${mod_id}-${minecraft_version}-neoforge"
 }
 

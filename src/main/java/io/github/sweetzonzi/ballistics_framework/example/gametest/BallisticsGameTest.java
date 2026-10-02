@@ -3,6 +3,8 @@ package io.github.sweetzonzi.ballistics_framework.example.gametest;
 import io.github.sweetzonzi.ballistics_framework.api.ArmorLevel;
 import io.github.sweetzonzi.ballistics_framework.api.BFDamageApi;
 import io.github.sweetzonzi.ballistics_framework.api.BFDamageContext;
+import io.github.sweetzonzi.ballistics_framework.api.BFDamageExtensionKey;
+import io.github.sweetzonzi.ballistics_framework.api.BFDamageExtensions;
 import io.github.sweetzonzi.ballistics_framework.api.BFDamageHandler;
 import io.github.sweetzonzi.ballistics_framework.api.BFHitResolveResult;
 import io.github.sweetzonzi.ballistics_framework.api.BFHurtTarget;
@@ -37,7 +39,7 @@ import org.jetbrains.annotations.Nullable;
 /**
  * BallisticsFramework 穿甲管线与承载者投递的自动化 GameTest。
  * <p>
- * 覆盖 19 个场景：
+ * 覆盖 21 个场景：
  * <ul>
  *   <li><b>8 个穿甲管线场景</b>：裸打靶子、同级击穿、低级阻挡、越级击穿、投射物越级命中、
  *       投射物打裸体靶子、普通实体回退、原版伤害回退——均为手工构造上下文后直接调用
@@ -46,6 +48,9 @@ import org.jetbrains.annotations.Nullable;
  *       投递不重新路由、贴身护甲击穿、贴身护甲挡下、本体层不跑、跳过贴身护甲、
  *       入口自检拒绝重复投递、零伤害早退、免疫、无敌帧窗口。这些场景是仓库内首次把
  *       "实体 {@code hurt} → mixin → 拦截器"这条链路纳入自动化验证——投递落地经过它。</li>
+ *   <li><b>2 个解析器转发场景</b>：协议入口把伤害转发给纯解析器解析出的实际目标、
+ *       解析为未命中时不回退到解析器自身（{@code BFDamageApi.hurt} 的分支 1.5，
+ *       契约见 {@code docs/BFDamageApi-hurt解析器转发计划.md}）。</li>
  * </ul>
  * agent 或开发者只需运行 {@code gradlew runGameTestServer} 即可自动验证全部场景，
  * 无需手动进入世界、穿戴护甲、发射投射物等。
@@ -61,6 +66,21 @@ public class BallisticsGameTest {
     private static final float EPSILON = 0.01f;
     private static final ResourceLocation ARENA_ID =
             ResourceLocation.fromNamespaceAndPath("ballistics_framework", "empty_arena");
+
+    /**
+     * 解析器携带的扩展 key（模拟真实解析器传递的"部件标识"）。
+     * 用于验证转发时解析结果的扩展容器会被并入上下文。
+     */
+    private static final BFDamageExtensionKey<String> RESOLVER_EXT =
+            BFDamageExtensions.register(
+                    ResourceLocation.fromNamespaceAndPath("ballistics_framework", "test_resolver_ext"),
+                    String.class, () -> "unset");
+
+    /** 调用方携带的扩展 key，用于验证并入解析器扩展时不会丢掉调用方原有的字段。 */
+    private static final BFDamageExtensionKey<String> CALLER_EXT =
+            BFDamageExtensions.register(
+                    ResourceLocation.fromNamespaceAndPath("ballistics_framework", "test_caller_ext"),
+                    String.class, () -> "unset");
 
     /**
      * 在所有GameTest批次开始前，程序化创建测试场地结构模板。
@@ -326,8 +346,8 @@ public class BallisticsGameTest {
     /**
      * 第一趟：宿主实现 {@code BFHitResolver}、零件实现 {@code BFHurtTarget}。
      * <p>
-     * 协议入口不做路由（{@code BFDamageApi.hurt} 的方法体内不调用 {@code resolveHit}），
-     * 因此调用方自行解析后再把伤害交给零件。
+     * 本场景由调用方自行解析后再把伤害交给零件；协议入口自行解析的形态见场景 20
+     * （{@code testHurtRoutesToResolvedPart}）。
      * <p>
      * 断言：零件承受全部伤害、{@code resolveHit} 被调用一次、宿主生命值不变
      * （第一趟不含投递）、宿主 {@code hurt} 未被触碰。
@@ -695,6 +715,197 @@ public class BallisticsGameTest {
         helper.succeed();
     }
 
+    // ======================== 场景20：协议入口把伤害转发给纯解析器解析出的实际目标 ========================
+
+    /**
+     * 宿主实现 {@code BFHitResolver}、不实现 {@code BFHurtTarget}，调用方**不**预先解析，
+     * 直接把宿主交给协议入口。
+     * <p>
+     * {@code BFDamageApi.hurt} 的分支 1.5 会用上下文自带的命中几何解析出实际目标后转发，
+     * 伤害因此落在零件上而不是宿主自身。
+     * <p>
+     * 断言：零件承受全部伤害、{@code resolveHit} 被调用一次、宿主生命值不变、宿主
+     * {@code hurt} 未被触碰（区别于"原版回退把伤害扣在宿主身上"）。
+     * 契约见 {@code docs/BFDamageApi-hurt解析器转发计划.md}。
+     */
+    @GameTest(timeoutTicks = 200, template = "empty_arena")
+    public static void testHurtRoutesToResolvedPart(GameTestHelper helper) {
+        ExampleProxyEntity host = spawnProxy(helper, new BlockPos(2, 1, 2));
+        TestPart part = new TestPart();
+        host.setPart(part);
+        Player attacker = helper.makeMockPlayer(GameType.SURVIVAL);
+
+        float hpBefore = host.getHealth();
+        // 不调用 resolveHitTarget：把宿主本身交给协议入口，由分支1.5 自行解析
+        float dealt = BFDamageApi.hurt(host,
+                deliveryContext(helper, attacker, host, 15f, 60f, null));
+
+        assertFloatEquals(15f, dealt, "协议入口应转发到零件并把零件的承受量作为返回值");
+        assertFloatEquals(15f, part.getDamageTaken(), "零件应承受全部伤害");
+        assertTrue(part.getHurtCalls() == 1, "零件 hurt 应被调用一次");
+        assertTrue(host.getResolveHitCalls() == 1, "协议入口应恰好解析一次");
+        assertFloatEquals(hpBefore, host.getHealth(), "宿主生命值不应变化——伤害不属于宿主");
+        assertTrue(host.getHurtCalls() == 0, "宿主 hurt 不应被触碰");
+        helper.succeed();
+    }
+
+    // ======================== 场景21：解析为未命中时不回退到解析器自身 ========================
+
+    /**
+     * 宿主未装配零件，{@code resolveHit} 返回 null（视为未命中）。协议入口应返回 0f 并且
+     * **不**把这次伤害落到宿主自身——协议伤害没有可回退的原版语义。
+     */
+    @GameTest(timeoutTicks = 200, template = "empty_arena")
+    public static void testHurtResolveMissDealsNoDamage(GameTestHelper helper) {
+        ExampleProxyEntity host = spawnProxy(helper, new BlockPos(2, 1, 2));
+        // 不调用 setPart：resolveHit 返回 null
+        Player attacker = helper.makeMockPlayer(GameType.SURVIVAL);
+
+        float hpBefore = host.getHealth();
+        float dealt = BFDamageApi.hurt(host,
+                deliveryContext(helper, attacker, host, 15f, 60f, null));
+
+        assertFloatEquals(0f, dealt, "解析为未命中时应返回 0f");
+        assertTrue(host.getResolveHitCalls() == 1, "协议入口应恰好解析一次");
+        assertFloatEquals(hpBefore, host.getHealth(), "解析失败不得回退为伤害落在宿主自身");
+        assertTrue(host.getHurtCalls() == 0, "宿主 hurt 不应被触碰");
+        helper.succeed();
+    }
+
+    // ======================== 场景22：修正几何与扩展数据被应用到转发上下文 ========================
+
+    /**
+     * {@code resolveHit} 报告的 {@code correctedHitPoint} / {@code correctedHitNormal}
+     * 与 {@code extensions} 必须写进交给实际目标的上下文。
+     * <p>
+     * 这条断言针对的是转发方的核心职责：解析器算出的是<b>子部件表面</b>的精确几何，
+     * 而调用方传入的命中点通常是<b>代理 AABB</b> 的交点。护甲侧的 `mapHitToSlot`
+     * 用上下文里的命中点判定着弹槽位，因此沿用旧命中点会让护甲按错误部位生效。
+     * <p>
+     * 同时验证调用方的扩展字段不被解析器的容器覆盖丢失。
+     */
+    @GameTest(timeoutTicks = 200, template = "empty_arena")
+    public static void testHurtAppliesResolvedGeometryAndExtensions(GameTestHelper helper) {
+        ExampleProxyEntity host = spawnProxy(helper, new BlockPos(2, 1, 2));
+        TestPart part = new TestPart();
+        host.setPart(part);
+        // 解析器报告"真实着弹点在入参命中点下方 0.4 格、法线朝上"
+        Vec3 correction = new Vec3(0.0, -0.4, 0.0);
+        Vec3 correctedNormal = new Vec3(0.0, 1.0, 0.0);
+        host.setHitCorrection(correction, correctedNormal);
+
+        Player attacker = helper.makeMockPlayer(GameType.SURVIVAL);
+        BFDamageContext ctx = deliveryContext(helper, attacker, host, 15f, 60f, null);
+        Vec3 reportedHit = ctx.hitPoint();
+        // 调用方自己带一个扩展字段，验证它不会在并入解析器扩展时丢失
+        ctx.extensions().set(CALLER_EXT, "caller-payload");
+
+        // 让解析结果携带扩展数据（真实解析器用这个通道传部件标识）
+        BFDamageExtensions resolverExts = new BFDamageExtensions();
+        resolverExts.set(RESOLVER_EXT, "part-42");
+        part.setResolveExtensions(resolverExts);
+
+        float dealt = BFDamageApi.hurt(host, ctx);
+
+        assertFloatEquals(15f, dealt, "伤害仍应转发到零件");
+        assertTrue(part.getHurtCalls() == 1, "零件 hurt 应被调用一次");
+
+        BFDamageContext seen = part.getLastContext();
+        assertTrue(seen != null, "零件应记录到本次上下文");
+        assertVecEquals(reportedHit.add(correction), seen.hitPoint(),
+                "转发上下文应使用 correctedHitPoint 而不是调用方传入的代理 AABB 交点");
+        assertVecEquals(correctedNormal, seen.hitNormal(),
+                "转发上下文应使用 correctedHitNormal");
+
+        assertTrue("part-42".equals(seen.extensions().get(RESOLVER_EXT)),
+                "解析器携带的扩展数据应被并入转发上下文");
+        assertTrue("caller-payload".equals(seen.extensions().get(CALLER_EXT)),
+                "并入解析器扩展时不得丢掉调用方原有的扩展字段");
+        assertTrue("caller-payload".equals(ctx.extensions().get(CALLER_EXT)),
+                "调用方传入的容器本身应保持可用");
+        helper.succeed();
+    }
+
+    // ======================== 场景23：零法线是"未修正"哨兵，应保留原法线 ========================
+
+    /**
+     * {@code correctedHitNormal} 为 {@link Vec3#ZERO} 是既有的"未修正"哨兵
+     * （{@code BFDamageApi.resolveHitTarget} 对纯 {@code BFHurtTarget} 即如此填充）。
+     * 此时应保留原上下文的法线，而不是把零矢量写进去——否则下游读法线算入射角会得到无意义结果。
+     */
+    @GameTest(timeoutTicks = 200, template = "empty_arena")
+    public static void testZeroCorrectedNormalKeepsOriginal(GameTestHelper helper) {
+        ExampleProxyEntity host = spawnProxy(helper, new BlockPos(2, 1, 2));
+        TestPart part = new TestPart();
+        host.setPart(part);
+        // 只修正命中点，法线留 ZERO 表示"未修正"
+        host.setHitCorrection(new Vec3(0.0, -0.3, 0.0), Vec3.ZERO);
+
+        Player attacker = helper.makeMockPlayer(GameType.SURVIVAL);
+        BFDamageContext ctx = deliveryContext(helper, attacker, host, 15f, 60f, null);
+        Vec3 originalNormal = ctx.hitNormal();
+
+        BFDamageApi.hurt(host, ctx);
+
+        BFDamageContext seen = part.getLastContext();
+        assertTrue(seen != null, "零件应记录到本次上下文");
+        assertVecEquals(originalNormal, seen.hitNormal(),
+                "零修正法线应回退为原上下文的法线，而不是写入零矢量");
+        assertTrue(seen.hitNormal().lengthSqr() > 0.0, "转发上下文的法线不得为零矢量");
+        helper.succeed();
+    }
+
+    // ======================== 场景24：协议外伤害转发同样应用修正几何 ========================
+
+    /**
+     * 拦截器情况 3 走的是另一条入口：它先用 {@code createContextFromVanilla} 构造低信息量上下文，
+     * 再转发，因此几何只能由转发方按解析结果补上。
+     * <p>
+     * 近战来源的入参命中点由 {@code searchRay} 取攻击者眼位（活体近战分支），
+     * 未必是真实着弹点。断言"零件看到的命中点 = 该入参命中点 + 解析器报告的修正量"，
+     * 这既证明修正被应用，也不依赖眼位的具体数值。取零修正作为对照，
+     * 排除"转发方根本没改命中点、恰好等于入参"的假阳性。
+     */
+    @GameTest(timeoutTicks = 200, template = "empty_arena")
+    public static void testInterceptorForwardingAppliesResolvedGeometry(GameTestHelper helper) {
+        Player attacker = helper.makeMockPlayer(GameType.SURVIVAL);
+        DamageSource source = helper.getLevel().damageSources().mobAttack(attacker);
+        Vec3 correction = new Vec3(0.25, -0.5, 0.25);
+
+        // 对照组：零修正 → 零件看到的命中点就是拦截器构造的入参命中点
+        ExampleProxyEntity baselineHost = spawnProxy(helper, new BlockPos(2, 1, 2));
+        TestPart baselinePart = new TestPart();
+        baselineHost.setPart(baselinePart);
+        baselineHost.setHitCorrection(Vec3.ZERO, Vec3.ZERO);
+        baselineHost.hurt(source, 12f);
+
+        // 实验组：报告修正量 → 零件看到的命中点应整体平移该修正量
+        ExampleProxyEntity host = spawnProxy(helper, new BlockPos(4, 1, 2));
+        TestPart part = new TestPart();
+        host.setPart(part);
+        host.setHitCorrection(correction, new Vec3(0.0, 1.0, 0.0));
+
+        float hpBefore = host.getHealth();
+        host.hurt(source, 12f);
+
+        assertTrue(part.getHurtCalls() == 1, "协议外伤害应被转发到零件");
+        assertTrue(host.getResolveHitCalls() == 1, "拦截器应恰好解析一次");
+        assertFloatEquals(hpBefore, host.getHealth(), "宿主不应承受伤害");
+
+        BFDamageContext base = baselinePart.getLastContext();
+        assertTrue(base != null, "对照组零件应记录到上下文");
+        // 两个宿主同高，searchRay 的近战分支只取决于攻击者眼位，故入参命中点相同
+        Vec3 baseHit = base.hitPoint();
+
+        BFDamageContext seen = part.getLastContext();
+        assertTrue(seen != null, "零件应记录到本次上下文");
+        assertVecEquals(baseHit.add(correction), seen.hitPoint(),
+                "拦截器转发应把 correctedHitPoint 应用到入参命中点之上");
+        assertVecEquals(new Vec3(0.0, 1.0, 0.0), seen.hitNormal(),
+                "拦截器转发应把 correctedHitNormal 写进上下文");
+        helper.succeed();
+    }
+
     // ======================== 辅助方法 ========================
 
     /**
@@ -778,6 +989,16 @@ public class BallisticsGameTest {
 
     private static void assertFloatEquals(float expected, float actual, String message) {
         if (Math.abs(expected - actual) > EPSILON) {
+            throw new GameTestAssertException(
+                    message + "：预期 " + expected + "，实际 " + actual);
+        }
+    }
+
+    /**
+     * 逐分量比较矢量，使用与浮点断言相同的 {@link #EPSILON} 容忍度。
+     */
+    private static void assertVecEquals(Vec3 expected, Vec3 actual, String message) {
+        if (expected.distanceToSqr(actual) > EPSILON * EPSILON) {
             throw new GameTestAssertException(
                     message + "：预期 " + expected + "，实际 " + actual);
         }
@@ -956,13 +1177,21 @@ public class BallisticsGameTest {
      * <p>
      * 记录承受的伤害量与 {@code hurt} 调用次数，供测试断言"零件确实承担了第一趟"。
      */
-    private static class TestPart implements BFHurtTarget {
+    private static class TestPart implements BFHurtTarget, ExampleProxyEntity.ResolveExtensionsCarrier {
 
         /** 零件自身的防护等级；默认裸体。 */
         private final ArmorLevel armorLevel;
 
         private float damageTaken;
         private int hurtCalls;
+
+        /** 最近一次 {@link #hurt} 收到的上下文，用于验证转发方是否应用了修正几何。 */
+        @Nullable
+        private BFDamageContext lastContext;
+
+        /** 由 {@link #resolveHit} 一并返回的扩展数据；null 表示返回空容器。 */
+        @Nullable
+        private BFDamageExtensions resolveExtensions;
 
         TestPart() {
             this(ArmorLevel.UNARMORED_1);
@@ -986,8 +1215,21 @@ public class BallisticsGameTest {
         }
 
         /**
+         * 记录本次伤害的上下文后再交回默认判定，使测试可以断言转发方写进上下文的几何。
+         */
+        @Override
+        public PenetrationResult resolvePenetration(BFDamageContext ctx) {
+            this.lastContext = ctx;
+            return BFHurtTarget.super.resolvePenetration(ctx);
+        }
+
+        /**
          * 按"原版伤害量的一半作为穿深"折算（与 {@code BFArmorMaterial} 的默认实现同一估算），
          * 使这个零件也能承接经拦截器转发的原版伤害（情况 3 要求实际目标能给出上下文）。
+         * <p>
+         * 注意本方法刻意<b>不</b>设置命中点与法线：它们保持 Builder 默认值
+         * （命中点为原点、法线朝上）。拦截器转发时若不应用解析出的修正几何，
+         * 零件看到的就会是这个默认值——修正是否生效因此可观测。
          */
         @Nullable
         @Override
@@ -1007,6 +1249,27 @@ public class BallisticsGameTest {
         /** @return {@link #hurt} 被调用的次数 */
         int getHurtCalls() {
             return hurtCalls;
+        }
+
+        /** @return 最近一次进入管线时记录的上下文；未进入过为 null */
+        @Nullable
+        BFDamageContext getLastContext() {
+            return lastContext;
+        }
+
+        /**
+         * 设置 {@link ExampleProxyEntity#resolveHit} 随解析结果一并返回的扩展数据。
+         *
+         * @param extensions 解析器携带的扩展容器；null 表示用空容器
+         */
+        void setResolveExtensions(@Nullable BFDamageExtensions extensions) {
+            this.resolveExtensions = extensions;
+        }
+
+        /** @return 解析器应随结果返回的扩展容器；未设置时为空容器 */
+        @Override
+        public BFDamageExtensions bf$resolveExtensions() {
+            return resolveExtensions != null ? resolveExtensions : new BFDamageExtensions();
         }
     }
 }
