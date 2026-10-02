@@ -52,8 +52,8 @@ Mixin interceptors (`EntityHurtMixin`, `LivingEntityHurtMixin`) catch non-protoc
 ## Testing quirks
 
 - GameTests live in `example/gametest/BallisticsGameTest.java` (19 scenarios: 8 penetration-pipeline + 11 carrier-delivery)
-- `@PrefixGameTestTemplate(false)` is required on the test class
-- Template arena (5x3x5 stone bricks) is built **programmatically** in `@BeforeBatch`, NOT loaded from a `.nbt` file
+- `@PrefixGameTestTemplate(false)` is required on the test class on both loaders (the default prefixes the template name with the class name)
+- Template arena (5x3x5 stone bricks): on `1.21.1-neoforge` it is built programmatically in `@BeforeBatch`; on `1.20.1-forge` it is the data-pack structure `data/ballistics_framework/structures/empty_arena.nbt` (note the `structures/` directory, which 1.20.1 requires)
 - Use `CallbackRecorder` (inner class) for callback verification, not log scraping; the delivery scenarios use `DeliveryRecorder`, which counts `before*` / `on*` calls and forces `isOvermatch` / `isSpall` to false so armor-item call counts stay exact
 - Carrier-delivery scenarios need the dev-only fixtures `example/entity/ExampleProxyEntity.java` (host / resolver, no `BFHurtTarget`), `example/entity/ExampleCarrierEntity.java` (carrier that is also a `BFHurtTarget`, with body-layer call counters and probes) and `example/item/ExampleDeliveryArmorItem.java` (15mm RHA armor whose three-piece and `afterHurt` calls are counted; call `ExampleDeliveryArmorItem.resetCounters()` before asserting on them)
 - Floating-point comparisons use epsilon `0.01f`
