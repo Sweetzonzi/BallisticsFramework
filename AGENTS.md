@@ -73,6 +73,16 @@ Mixin interceptors (`EntityHurtMixin`, `LivingEntityHurtMixin`) catch non-protoc
 - Handler callbacks fire in two phases per penetration layer: `before*` callbacks (pre-`hurt()`) and `on*` callbacks (post-`hurt()`)
 - For composite targets (branch 0), callbacks fire for BOTH armor layer and entity body layer — two rounds of callbacks
 
+## Documentation
+
+Applies to `docs/**` (including the `mkdocs.yml` nav) and to code comments / Javadoc.
+
+- **Every reference must be locatable.** For this repository's source, write `path#symbol` with a symbol that literally appears in the file — a method name, a field name, a nested type, a distinctive marker comment. Examples: `api/BFDamageApi.java#hurt`, `internal/BFContextStack.java#hasContextFor`, `internal/BFArmorAdapter.java#resolveBestSlot`. **Do not anchor to line numbers on their own**: they drift silently, break nothing loudly, and end up pointing at unrelated code. A line number is acceptable only when the exact historical revision is the point — then pin it as `path:line @ <commit>`, which `git show <commit>:<path>` reproduces. For work that is planned but not yet implemented, cite the owning document's own `§N` instead, and switch it to `path#symbol` once the symbol lands. For a sibling repository, prefix the repository name — `Machine-Max` + `common/mech/vehicle/SubPart.java#settleAccumulatedDamage`. For an external library (Minecraft, NeoForge, Forge), use the fully qualified class or method name; its sources are not in this repository, so a line number there is unverifiable and must not be used.
+- **Cross-references are required, not forbidden.** A document does not have to restate everything it depends on; it must give a coordinate the reader can follow.
+- **But every fact has exactly one home.** Definitions, thresholds and decision rationales live in one document; everywhere else references them. If a second document restates a rule it must cite the owner — never fork a local copy, because a forked copy drifts and two documents then disagree about the truth. Wiki pages summarise; the design plans and the code own the exact contract. When the same rule appears in several places, the fix is to pick an owner and point the rest at it.
+- **Never describe the current state relative to a previous state.** Phrases such as "no longer uses X", "still works", "changed to Y", "(was Z)" assume the reader knows an older version. The test: would this sentence be unambiguous and verifiable to someone who has only ever seen the current file — no git history, no earlier revision, no conversation? If not, state the current fact absolutely, put the baseline in the same sentence, or move the comparison into a revision-history section at the end.
+- **When behaviour changes, sweep every document that describes it.** Search the symbol name and the affected `§` references across `docs/**` and this file before reporting done, and keep the `mkdocs.yml` nav in step with added, renamed or removed pages.
+
 ## CI / Release
 
 - **Release**: push tag `v*` → the workflow picks the JDK from the loader key present in `gradle.properties` (`forge_version` → 17, `neo_version` → 21), attaches the jar to a GitHub Release (prerelease)

@@ -11,7 +11,7 @@
 > 审阅修订记录（按审阅意见就地更新，未改动 Step 1-4 的技术方案）：
 >
 > - §2.1 补"同时实现两接口且 `createContextFromVanilla` 返回 null"时的分支归属（有意变更，与 `3.5` 现有描述不同）
-> - §2.4 保留并加固原文论证：已对照 NeoForge 21.1.219 反编译源码确认 `AbstractArrow` 是**先 `onHit`／`hurt`、后 `setPos`**，故 `hurt` 阶段的位置最多落后一个 tick 的位移；补充 `DamageSource.java:120-126`、`AbstractArrow.java:214-216`/`:300`、`Projectile.java:191` 的行号依据；并把回落失败的后果从"精度下降"改为"伤害落到代理自身"
+> - §2.4 保留并加固原文论证：已对照 NeoForge 21.1.219 反编译源码确认 `AbstractArrow` 是**先 `onHit`／`hurt`、后 `setPos`**，故 `hurt` 阶段的位置最多落后一个 tick 的位移；并补充原版侧依据，可从 `build/moddev/artifacts/neoforge-21.1.219-sources.jar` 核对 `net.minecraft.world.damagesource.DamageSource#getSourcePosition`、`net.minecraft.world.entity.projectile.AbstractArrow#tick`／`#setPos`、`net.minecraft.world.entity.projectile.Projectile#onHit`；并把回落失败的后果从"精度下降"改为"伤害落到代理自身"
 > - §三 非目标澄清：§七.4 复述的是 `BFHurtTarget#getBFEntity()` 的既有要求，不算改接口；新增"代理不应承载生命值"
 > - §四 文件清单补 `docs/BFHitResolver-实现计划.md`；`docs/` 各条标注需改写的具体矛盾点；GameTest 降级为可选
 > - §五 Step 1 爆炸分支补"自定义爆炸类型落到第 4 行、行为一致"与 `getSourcePosition()` 待确认说明；Step 3.1 补"接口与 record 必须 `public`"及其理由；Step 4 把 `cir.setReturnValue` 改为 **`ctx != null` 即接管**
@@ -60,16 +60,16 @@
 
 | 位置 | 现状 |
 | --- | --- |
-| `api/BFDamageApi.java:274` | `isProtocolAware(Entity entity)` —— 参数为 `Entity`，判据是 `instanceof BFHitResolver \|\| instanceof BFHurtTarget` |
-| `api/BFDamageApi.java:307` | `resolveHitTarget(Entity hitEntity, Vec3 hitPoint, Vec3 delta)` —— 命中对象必须是实体 |
-| `api/BFDamageApi.java:330` | `resolveHitTarget(HitResult, Vec3)` —— 从 `EntityHitResult` 解包，非实体命中直接返回 null |
-| `mixin/ProjectileHitResolverMixin.java:32-33` | 注入条件是 `result instanceof EntityHitResult` 且其实体实现 `BFHitResolver` |
+| `api/BFDamageApi.java#isProtocolAware` | `isProtocolAware(Entity entity)` —— 参数为 `Entity`，判据是 `instanceof BFHitResolver \|\| instanceof BFHurtTarget` |
+| `api/BFDamageApi.java#resolveHitTarget` | `resolveHitTarget(Entity hitEntity, Vec3 hitPoint, Vec3 delta)` —— 命中对象必须是实体 |
+| `api/BFDamageApi.java#resolveHitTarget` | `resolveHitTarget(HitResult, Vec3)` —— 从 `EntityHitResult` 解包，非实体命中直接返回 null |
+| `mixin/ProjectileHitResolverMixin.java` | 注入 `Projectile#onHit` 的 HEAD；条件是 `result instanceof EntityHitResult` 且其实体实现 `BFHitResolver` |
 
 物理体属主（`PhysicsHost`）、包装体等非实体命中对象无法进入这条链路。
 
 ### 2.3 解析成功时不施加伤害
 
-`ProjectileHitResolverMixin` 只处理"假阳性"分支：`resolveHit` 返回 null 时 `ci.cancel()`，让投射物继续飞行（`mixin/ProjectileHitResolverMixin.java:45-48`）。解析成功时放行原版流程，伤害由随后的原版 `entity.hurt(proxy)` 承担，落到 `BFHurtInterceptor` 的情况 2——而该分支要求 **proxy 自身实现 `BFHurtTarget`**（`internal/BFHurtInterceptor.java:42-49`）。
+`ProjectileHitResolverMixin` 只处理"假阳性"分支：`resolveHit` 返回 null 时 `ci.cancel()`，让投射物继续飞行（`mixin/ProjectileHitResolverMixin.java` 的 `bf$resolveHitBeforeProcess`）。解析成功时放行原版流程，伤害由随后的原版 `entity.hurt(proxy)` 承担，落到 `BFHurtInterceptor` 的情况 2——而该分支要求 **proxy 自身实现 `BFHurtTarget`**（`internal/BFHurtInterceptor.java#intercept`）。
 
 于是代理必须同时实现两个接口：`BFHitResolver` 回答"打中了谁"，`BFHurtTarget` 才能承接伤害。即便护甲与血量语义实际属于代理所引用的那个目标，代理仍要再实现一遍转发。
 
@@ -83,7 +83,7 @@
 两个阶段各自能拿到的信息并不对等（以下结论已对照 NeoForge 21.1.219 反编译源码核实）：
 
 - `onHit` 阶段持有 `EntityHitResult`：命中点是射线与 AABB 的精确交点，搜索矢量取自投射物自身的 `getDeltaMovement()`。
-- `hurt` 阶段只持有 `DamageSource`：`DamageSource#getSourcePosition()` 在伤害源未显式记录位置时回退为 `getDirectEntity().position()`（`DamageSource.java:120-126`，无 direct entity 时返回 null）。对投射物伤害源，direct entity 就是该投射物，因此拿到的是**投射物当前坐标**。
+- `hurt` 阶段只持有 `DamageSource`：`DamageSource#getSourcePosition()` 在伤害源未显式记录位置时回退为 `getDirectEntity().position()`（`net.minecraft.world.damagesource.DamageSource#getSourcePosition()`，无 direct entity 时返回 null）。对投射物伤害源，direct entity 就是该投射物，因此拿到的是**投射物当前坐标**。
 
 关键在于这个"当前坐标"还不是命中点。以 `AbstractArrow` 为例，一个 `tick` 内的顺序是：
 
@@ -94,10 +94,10 @@ tick() 开始
   clip / findHitEntity(vec32, vec33)   // 用"起点→终点"的线段做碰撞检测
   hitTargetOrDeflectSelf → onHit → onHitEntity → entity.hurt(...)   ← 缓存的写入点与 hurt 都在这里
   ...
-  setPos(d7, d2, d3)            // 位置在这里才更新到本 tick 的终点（AbstractArrow.java:300）
+  setPos(d7, d2, d3)            // 位置在这里才更新到本 tick 的终点（AbstractArrow#setPos）
 ```
 
-也就是说，`hurt` 阶段取到的位置是**本 tick 移动之前**的值，与精确交点相差最多一个 tick 的位移（`AbstractArrow.java:214-216` 用 `position()` 作线段起点，`:300` 才 `setPos`；`Projectile.java:191` 的 `onHit` 调用在位置更新之前）。`ThrowableProjectile` 等自行 `setPos` 的投射物同理，且若伤害延迟到更晚结算，偏差还会更大。
+也就是说，`hurt` 阶段取到的位置是**本 tick 移动之前**的值，与精确交点相差最多一个 tick 的位移（`net.minecraft.world.entity.projectile.AbstractArrow#tick` 用 `position()` 作线段起点、到方法末尾才 `setPos`；`net.minecraft.world.entity.projectile.Projectile#onHit` 的调用发生在位置更新之前）。`ThrowableProjectile` 等自行 `setPos` 的投射物同理，且若伤害延迟到更晚结算，偏差还会更大。
 
 因此：
 
@@ -320,7 +320,7 @@ public static BFHitResolveResult resolveHitTarget(Entity hitEntity, Vec3 hitPoin
 
 `resolveHitTarget` 三个重载的选取由 Java 的重载解析决定：实参静态类型为 `Entity` 时选中实体版（最具体），为其他引用类型时选中 `Object` 版，为 `HitResult` 时选中两参数重载；`isProtocolAware` 的两个重载同理。
 
-**Javadoc 同步**：实体版重载是 `{@link #resolveHitTarget(Object, Vec3, Vec3)}` 的转发入口，类内两处 `{@link #resolveHitTarget(Entity, Vec3, Vec3)}` 需更新为 `{@link #resolveHitTarget(Object, Vec3, Vec3)}`（`api/BFDamageApi.java:321`，以及 `api/BFHitResolver.java:19` 的 `@see`）。
+**Javadoc 同步**：实体版重载是 `{@link #resolveHitTarget(Object, Vec3, Vec3)}` 的转发入口，类内两处 `{@link #resolveHitTarget(Entity, Vec3, Vec3)}` 需更新为 `{@link #resolveHitTarget(Object, Vec3, Vec3)}`（`api/BFDamageApi.java#resolveHitTarget` 的类 Javadoc 示例，以及 `api/BFHitResolver.java` 类 Javadoc 的 `@see`）。
 
 ### Step 3：投射物侧——缓存载体与几何写入
 
@@ -586,14 +586,14 @@ if (self instanceof BFHitResolver) {
 | 投射物速率低于 0.001 时命中实现 `BFHitResolver` 的代理 | `onHit` 阶段原版行为不变（不 cancel），不写缓存 |
 | 投射物命中代理，实际目标存在但协议判定被完全挡住（`dealt == 0`） | 情况 3 已接管（返回 `true`，原版流程被取消）；代理自身**不掉血**，实际目标也不掉血 |
 | 原版箭矢命中代理（走缓存的正常路径） | `hurt` 阶段箭矢尚未移动到命中点，但缓存里有 `onHit` 阶段的精确结果，判定不受影响 |
-| 同一场景中实际目标拒绝协议外伤害（`ctx == null`） | 放行原版流程；代理若是非生物实体，`Entity#hurt` 只 `markHurt()` 并返回 false（不掉血）；代理若是 `LivingEntity`，原版扣血会**真的扣在代理身上**——这正是 §七.5 要求代理不承载生命值的原因（已对照反编译源码：`Entity.java:1579-1586`、`Player.java:952`） |
+| 同一场景中实际目标拒绝协议外伤害（`ctx == null`） | 放行原版流程；代理若是非生物实体，`Entity#hurt` 只 `markHurt()` 并返回 false（不掉血）；代理若是 `LivingEntity`，原版扣血会**真的扣在代理身上**——这正是 §七.5 要求代理不承载生命值的原因（已对照 `net.minecraft.world.entity.Entity#hurt` 与 `net.minecraft.world.entity.player.Player#hurt` 的反编译源码） |
 | 普通实体（两个接口都不实现） | 拦截器直接放行，零行为变化 |
 
 **关于测试**：本计划**不把 GameTest 列为交付项**。若后续要补，可行的是"情况 3 转发""假阳性不销毁""缓存一致性（高速投射物不丢伤害）""穿透多目标互不串扰"四项；但仓库当前没有任何 `BFHitResolver` 实现者，落成测试前需要先加一个示例代理实体（实现 `BFHitResolver`、不实现 `BFHurtTarget`）并在 `ExampleContent` 中注册，同时这些测试要自行搭建真实的"投射物 `tick → onHit → hurt`"链路——现有 8 个 GameTest 全部是手工构造 `ctx` 直接调 `BFDamageApi.hurt`，没有可复用的投射物驱动代码。缺测试时的替代验证方式：Downstream 首次接入时按 §七 逐条自查，或在创造模式下手持原版箭/雪球对代理实体实测。
 
 ## 九、待实测确认项
 
-1. **（已核实）** `DamageSource#getSourcePosition()` 存在，且实现为"显式记录的位置优先，否则取 `getDirectEntity().position()`，无 direct entity 时返回 null"（NeoForge 21.1.219 反编译源码 `DamageSource.java:119-126`，方法带 `@Nullable`）。投射物伤害源的 direct entity 就是该投射物，故 Step 1 的投射物分支直接取 `projectile.position()` 而不另设回退；其他分支依赖 `radialRay` 的 null 早退来处理"无源位置"与"无 direct entity"两种 null 情况，与实现一致。
+1. **（已核实）** `DamageSource#getSourcePosition()` 存在，且实现为"显式记录的位置优先，否则取 `getDirectEntity().position()`，无 direct entity 时返回 null"（对照 `build/moddev/artifacts/neoforge-21.1.219-sources.jar` 内 `net.minecraft.world.damagesource.DamageSource#getSourcePosition`，方法带 `@Nullable`）。投射物伤害源的 direct entity 就是该投射物，故 Step 1 的投射物分支直接取 `projectile.position()` 而不另设回退；其他分支依赖 `radialRay` 的 null 早退来处理"无源位置"与"无 direct entity"两种 null 情况，与实现一致。
 2. 活体近战分支的固定搜索长度取 5.0 m 是否足够覆盖常见近战距离与实体 AABB 尺寸。该值可按实测调整，不改变分派结构。
 3. **缓存的写入覆盖率**：需确认会触发情况 3 的投射物来源都在 `onHit` 阶段写入了结果。真实条件是 **"`Projectile#onHit` 被调用到"**（缓存写入在该方法 HEAD）——子类覆写 `onHit` 但只要调用或不调用 `super.onHit` 都不影响写入时机；真正绕过缓存的是完全不经过 `Projectile#onHit` 的实体命中路径（自定义投射物自行结算伤害）与伤害延迟结算的来源。未写入的来源会回落 `searchRay`，**其后果按 §2.4 是伤害去向错误，而不是精度下降**，处理方式见 §七.3。
 4. **缓存结果的使用面**：取用方只读取 `actualTarget()`，不得调用 `extensions()`。`BFDamageExtensions` 是可变容器（`set()` 写入内部 `HashMap`，`copy()` 是浅拷贝），把 `BFHitResolveResult` 存进缓存等于把解析器的扩展容器引用延长到 `hurt` 阶段之后。因此：解析器不应返回"之后还会被自己修改"的容器；若确实要复用，应返回 `extensions().copy()`。同一 `BFHitResolveResult` 也没有其它读取方（`BFHurtInterceptor` 只取 `actualTarget()`，缓存在 `onHit`/`hurt` 之间不经过第三方）。
