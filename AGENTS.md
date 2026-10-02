@@ -5,7 +5,8 @@
 ```bash
 # Build
 ./gradlew build
-# Output: build/libs/ballistics_framework-1.20.1-forge-<version>.jar
+# Output: build/libs/<mod_id>-<minecraft_version>-<loader>-<version>.jar
+#   (pattern from build.gradle archivesName; loader is "neoforge" or "forge")
 
 # Run all 8 GameTests (no GUI needed)
 ./gradlew runGameTestServer
@@ -14,8 +15,8 @@
 
 ## Project facts
 
-- **Minecraft 1.20.1**, **Forge 47.4.0**, **Java 17**
-- **mod_id**: `ballistics_framework`, package: `io.github.sweetzonzi.ballistics_framework`
+- **This repository carries one branch per loader**: `1.21.1-neoforge` (NeoForge, Java 21) and `1.20.1-forge` (Forge, Java 17). Platform details are branch-specific and authoritative in the checked-out branch's own config — read `gradle.properties` (`minecraft_version`, `neo_version` or `forge_version`, `mod_version`) and `build.gradle` (`archivesName`, `java.toolchain.languageVersion`). The branch name doubles as the release artifact's `-<loader>` suffix.
+- **mod_id**: `ballistics_framework`, package: `io.github.sweetzonzi.ballistics_framework` (identical on both branches)
 - Current version: `1.0.0.alpha.11` (from `gradle.properties`)
 - License: LGPL 3.0
 - Wiki (MkDocs) at `docs/`; GitHub Pages deploys only from `1.21.1-neoforge` (see CI / Release)
@@ -74,6 +75,6 @@ Mixin interceptors (`EntityHurtMixin`, `LivingEntityHurtMixin`) catch non-protoc
 
 ## CI / Release
 
-- **Release**: push tag `v*` → builds with JDK 17 (chosen by the workflow from `forge_version` presence), attaches jar to GitHub Release (prerelease)
+- **Release**: push tag `v*` → the workflow picks the JDK from the loader key present in `gradle.properties` (`forge_version` → 17, `neo_version` → 21), attaches the jar to a GitHub Release (prerelease)
 - **Pages**: push to `1.21.1-neoforge` branch with `docs/**` changes → builds MkDocs
 - Release workflow reads `gradle.properties` for mod metadata; also supports `workflow_dispatch` with version override
