@@ -6,7 +6,7 @@
 > - [BFHitResolver-实现计划.md](./BFHitResolver-实现计划.md) —— `BFHitResolver` / `BFHitResolveResult` / `resolveHitTarget` 的接口定义记录
 > - wiki：[3.5-协议外伤害兼容](./wiki/3-护甲侧开发/3.5-协议外伤害兼容.md)、[3.7-代理实体：实现 BFHitResolver](./wiki/3-护甲侧开发/3.7-代理实体：实现BFHitResolver.md)、[4.1-穿甲判定管线](./wiki/4-协议内幕/4.1-穿甲判定管线.md)、[4.3-ThreadLocal与Mixin](./wiki/4-协议内幕/4.3-ThreadLocal与Mixin.md)
 >
-> **本文自包含**：不要求读者先读上述任何一份文档。引用本仓库源码时按 `路径#符号` 给出坐标，符号取源码里可检索的声明名；引用下游仓库时按「仓库名 + `路径#符号`」给出坐标。正文在被引用处就地说明该符号的职责。本文要新增、尚未存在于源码中的符号，一律按本文 §号引用，不写 `路径#符号`——符号落地后引用才成立。
+> **自足性**：设计结论、判据与决策记录都写在本文内；其余文档可以只读引用而不必重述——但引用必须给得出坐标，取值规则见仓库根 [`AGENTS.md`](../AGENTS.md) 的 Documentation 一节（本仓库、兄弟仓库、外部库三种写法）。本文要新增、尚未存在于源码中的符号（`stackTargetOf`、`reduceForCarrier`、`CarrierArmorResult`）按本文 §号引用，符号落地后改为 `路径#符号`。
 >
 > **本文同时是实施依据与验收依据**：§五～§七 给出的签名、编排与调用契约即为落地形态；§十 的用例为验收清单。
 
