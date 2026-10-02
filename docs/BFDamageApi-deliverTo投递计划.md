@@ -35,7 +35,36 @@ public static boolean deliverTo(Entity carrier, BFDamageContext ctx, boolean ign
 | `BFDamageApi.resolveHitTarget`（`api/BFDamageApi.java#resolveHitTarget`） | "这一下实际打到了哪个对象" | 不压栈，管线外调用 |
 | `deliverTo` | "这些承受最终扣谁的血" | 压栈，只跑护甲层后落地 |
 
-### 1.2 改动范围
+### 1.2 绕行范围：投递跳过了管线的哪些环节
+
+**一句话定义：`deliverTo` 是一次不再判定的协议调用。** 它保留协议上下文与协议回调，跳过的是"判定"这一类环节——包括目标身份判定、路由判定，以及（可选的）护甲层判定。传入的 `ctx` 必须已经是第一趟的结算结果。
+
+把"BF 管线"拆成环节后，"绕开"的精确含义如下（`③`～`⑨` 对应 §5.3 的实现骨架）：
+
+| 环节 | `hurt` | `deliverTo(…, false)` | `deliverTo(…, true)` |
+| --- | --- | --- | --- |
+| ① 用 `resolveHit` 解析实际目标 | 由调用方在管线外做 | **不做** | **不做** |
+| ② 入栈（`BFContextStack.push`） | 做 | 做 | 做 |
+| ③ 判定目标身份、选取分支（复合 / `BFHurtTarget` / 适配器 / 普通实体） | 做 | **不做**——只走护甲层 | **不做**——一层都不走 |
+| ④ 承载者作为 `BFHurtTarget` 的本体层：`resolvePenetration` / `calculateFinalDamage` | 做 | **不做** | **不做** |
+| ⑤ 承载者穿戴的 `BFArmorMaterial` 护甲层三件套 | 做 | 做 | **不做** |
+| ⑥ 护甲层的穿甲回调（`before*` / `on*`）与 `armorAfterHurt` | 做 | 做 | **不做** |
+| ⑦ 本体层回调（`before*` / `on*`）与 `afterHurt` | 做 | **不做** | **不做** |
+| ⑧ 通用落地回调（`beforeNormalEntityHit` / `onNormalEntityHit`） | 分支3 做 | **不做** | **不做** |
+| ⑨ 原版 `carrier.hurt(ctx.source(), ctx.baseDamage())` | 做 | 做 | 做 |
+| ⑩ 拦截器 `BFHurtInterceptor.intercept` 的判定 | 做（在 `hurt` 内部递归进入时按情况 1 放行） | 做，但压栈使其命中情况 1 后立即放行 | 同左 |
+
+`ignoreBFArmor` 的语义因此是**在"已经绕开判定"的基础上，再额外跳过护甲这一层判定**（`⑤` 与 `⑥`）。两个重载的差别只有这一处，其余绕行是共同的。
+
+三条容易读错的推论，就地写清：
+
+- **`ignoreBFArmor = true` 时，整条投递路径上不存在任何 BF 环节**，只剩"入栈 + 原版落地"。这是"这次命中已经判定过、不要再让它进入协议"的最强形态。
+- **`ignoreBFArmor = false` 时，投递仍然绕开 `BFHitResolver` 的路由**。承载者即使是解析器也不会被重新解析——这正是"投递不会被路由回触发它的那个部件"的原因（§2.3）。
+- **投递不等于"没有经过协议"。** `ctx` 携带协议上下文，护甲物品的回调能读到它（§5.5）。"绕开"针对的是**判定**，不是**上下文与回调**。
+
+还有一条边界必须说清：**投递并不绕开拦截器。** 承载者的 `hurt` 仍然会进入 `mixin/EntityHurtMixin.java` 与 `mixin/LivingEntityHurtMixin.java` 的 HEAD 注入点，只是压栈使 `internal/BFHurtInterceptor.java#intercept` 的情况 1 直接命中并放行，因此不会到达情况 2 / 3 / 4——"不会重新进入判定"是压栈换来的，不是跳过注入点换来的。这条区别在压栈失败时有实际后果：那时拦截器会按普通路径重新分发（§5.8）。
+
+### 1.3 改动范围
 
 改动集中在三处：`api/BFDamageApi.java` 新增两个 `deliverTo` 重载与共享的压栈目标选取，`internal/BFArmorAdapter.java` 新增供投递使用的护甲层入口，`api/BFDamageHandler.java` 的类 Javadoc 补投递期回调的边界。不触碰 `BFHurtTarget`、`BFHitResolver`、`BFDamageContext`、`BFDamageExtensions`、`BFArmorMaterial` 的接口定义，不触碰穿甲判定管线、`internal/BFContextStack.java` 与 `internal/BFHurtInterceptor.java`。
 
@@ -126,7 +155,7 @@ hurt(host, ctx)                       push(host)                   栈顶 = host
 
 需要说明的是：**协议管线本身不做路由。** `BFDamageApi.hurt` 的方法体内不调用 `resolveHit` / `resolveHitTarget`——`BFHitResolver` 只出现在 `api/BFDamageApi.java#isProtocolAware` 与 `api/BFDamageApi.java#resolveHitTarget` 两处解析方法中，而 `hurt` 在进入分支判定之前就已完成压栈。因此"第二趟若走 `hurt` 会被重新路由回部件"这个说法不成立；选择 `deliverTo` 的理由是上面那两处形态差别。
 
-**投递是独立的协议调用，而非第一趟的回调**：下游的结算相位已经把第二趟独立出来。兄弟仓库 Machine-Max 的 `docs/伤害结算相位与装配体投递修改计划.md` §5.1 把零件伤害结算放在 `LevelTickEvent.Post`，§5.4 的 `common/mech/vehicle/IPartAssembly.java#onPartDamage(Part, List)` 把"本零件本次结算产生的全部命中记录"通告给装配体，该文档 §七明确"不规定投递"，投递由装配体实现自行扇出。
+**投递是独立的协议调用，而非第一趟的回调**：下游的结算相位已经把第二趟独立出来。兄弟仓库 Machine-Max 的 `docs/伤害结算相位与装配体投递修改计划.md` §5.1 把零件伤害结算放在 `LevelTickEvent.Post`，§5.4 的 `common/mech/vehicle/IPartAssembly.java#onPartDamage(Part, List)` 把"本零件本次结算产生的全部命中记录"通告给装配体，Machine-Max 的 `docs/伤害结算相位与装配体投递修改计划.md` §七明确"不规定投递"，投递由装配体实现自行扇出。
 
 ## 三、实际场景需求
 
@@ -134,10 +163,10 @@ hurt(host, ctx)                       push(host)                   栈顶 = host
 
 以"义体化玩家"为例（兄弟仓库 ARMS-Core 的 `docs/宿主接入与伤害管线设计.md` §一、§4.4）：
 
-- **宿主只有一个实体**：玩家自己的 `net.minecraft.world.entity.player.Player`。机体不是实体，而是挂在玩家身上的一份数据（该文档 §二），因此不存在"玩家实体"与"机体实体"的位置同步与伤害仲裁问题。
-- **玩家实体实现 `BFHitResolver`**：它回答"这一下实际打到了哪个零件"，不回答"我能吸收多少"（该文档 §4.1、§4.2）。
-- **玩家实体不实现 `BFHurtTarget`**：装甲层由零件承担；玩家一旦声明自己是协议伤害目标，协议管线里就会多出一条与零件装甲重叠的判定路径（该文档 §4.2 第 3 条）。
-- **伤害的最终落地必须走原版 `hurt`**：原版的护甲与附魔减免发生在 `net.minecraft.world.entity.LivingEntity#actuallyHurt` 内部，无敌帧、荆棘反伤与 `LivingEntityHurtEvent` / `PlayerHurtEvent` 也在这一层。直接把结算值写进生命值会绕过上述全部语义（该文档 §4.4）。
+- **宿主只有一个实体**：玩家自己的 `net.minecraft.world.entity.player.Player`。机体不是实体，而是挂在玩家身上的一份数据（ARMS-Core 的 `docs/宿主接入与伤害管线设计.md` §二），因此不存在"玩家实体"与"机体实体"的位置同步与伤害仲裁问题。
+- **玩家实体实现 `BFHitResolver`**：它回答"这一下实际打到了哪个零件"，不回答"我能吸收多少"（ARMS-Core 的 `docs/宿主接入与伤害管线设计.md` §4.1、§4.2）。
+- **玩家实体不实现 `BFHurtTarget`**：装甲层由零件承担；玩家一旦声明自己是协议伤害目标，协议管线里就会多出一条与零件装甲重叠的判定路径（ARMS-Core 的 `docs/宿主接入与伤害管线设计.md` §4.2 第 3 条）。
+- **伤害的最终落地必须走原版 `hurt`**：原版的护甲与附魔减免发生在 `net.minecraft.world.entity.LivingEntity#actuallyHurt` 内部，无敌帧、荆棘反伤与 `LivingEntityHurtEvent` / `PlayerHurtEvent` 也在这一层。直接把结算值写进生命值会绕过上述全部语义（ARMS-Core 的 `docs/宿主接入与伤害管线设计.md` §4.4）。
 
 由此得到的链路是：
 
@@ -197,10 +226,15 @@ public static boolean deliverTo(Entity carrier, BFDamageContext ctx)
  * {@link BFArmorMaterial} 护甲且 {@code ignoreBFArmor} 为 false 则过一遍它的护甲层
  * → 交给承载者的原版 {@code hurt}。
  *
- * <p>形态与 {@link #hurt} 中"目标穿戴 {@code BFArmorMaterial} 护甲"的分支相同，
- * 差别有两处：本方法不经过 {@link BFHitResolver} 的路由，也不执行承载者作为
+ * <p><b>绕行范围</b>：本方法不判定目标身份、不选取分支、不执行承载者作为
  * {@link BFHurtTarget} 的本体层（{@code resolvePenetration} /
- * {@code calculateFinalDamage}）。
+ * {@code calculateFinalDamage}），也不经过 {@link BFHitResolver} 的路由——承载者
+ * 即使是解析器也不会被重新解析。两个重载的差别只有一处：{@code ignoreBFArmor} 为
+ * true 时再额外跳过承载者穿戴的 {@link BFArmorMaterial} 护甲层及其回调。逐环节的
+ * 对照见 §1.2。
+ *
+ * <p>落地仍走原版 {@code hurt}，因此无敌帧、原版护甲、附魔、荆棘反伤与伤害事件
+ * 全部保留。
  *
  * <p><b>调用约束</b>：调用时上下文栈中不得已存在任何正在结算的 {@code BFHurtTarget}，
  * 承载者自身也不例外。栈中已存在承载者时，本次投递被拒绝（返回 false）并记录警告；
@@ -210,8 +244,10 @@ public static boolean deliverTo(Entity carrier, BFDamageContext ctx)
  *                      {@code carrier.getBFEntity()}（与 {@link #hurt} 同一规则）
  * @param ctx           已修正的投递上下文。source、命中几何、extensions、handler
  *                      均取自此处
- * @param ignoreBFArmor true 表示本次投递完全绕开 BF 管线——不跑承载者的贴身护甲层、
- *                      不触发任何穿甲回调，伤害直接交给原版 {@code hurt}
+ * @param ignoreBFArmor true 表示在"投递已绕开判定"的基础上，再跳过承载者穿戴的
+ *                      {@code BFArmorMaterial} 护甲层：不跑三件套、不触发任何穿甲
+ *                      回调、不消耗护甲耐久，伤害直接交给原版 {@code hurt}。
+ *                      false 表示护甲层照常参与（见 §1.2 的环节对照表）
  * @return 一次落地的结果，取值见 §5.6。false 表示未落地——贴身护甲判定为未击穿/跳弹
  *         且 {@code calculateFinalDamage} 返回 0，或原版拒绝（无敌帧内且未超过上次
  *         伤害、已死亡、免疫、玩家受到的伤害量恰为 0）。
@@ -220,15 +256,16 @@ public static boolean deliverTo(Entity carrier, BFDamageContext ctx)
 public static boolean deliverTo(Entity carrier, BFDamageContext ctx, boolean ignoreBFArmor)
 ```
 
-### 5.2 形态分支
+### 5.2 两个重载的差别
 
-| # | carrier | `ignoreBFArmor` | 护甲层 | 穿甲回调 | `carrier.hurt` | 结果 |
-| --- | --- | --- | --- | --- | --- | --- |
-| 1 | 任意 | `true` | 整段跳过 | 无 | 恒调用 | 完全绕开 BF 管线的一次落地 |
-| 2 | 穿 BF 护甲 | `false` | 三件套 + `before*` + `armorAfterHurt` + `on*` | 有 | `delivered > 0` 时调用 | 护甲挡下则返回 false，**回调照发** |
-| 3 | 未穿 BF 护甲 | `false` | 跳过 | 无 | 恒调用 | 与形态 1 的运行时行为一致 |
+两个重载**只差一件事**：`ignoreBFArmor` 为 true 时额外跳过承载者穿戴的 `BFArmorMaterial` 护甲层及其回调。其余绕行（不判定目标身份、不跑承载者本体层、不路由）两者相同，逐环节对照见 §1.2。
 
-形态 1 与形态 3 的运行时行为重合，二者不冗余：`ignoreBFArmor` 表达**意图**（"这次命中已判定过，不要再判"），形态 3 表达**事实**（没有甲可判）。调用方无法预知承载者装备时应使用前者。
+| `ignoreBFArmor` | 护甲层三件套 | 护甲层回调与 `armorAfterHurt` | `carrier.hurt` | 结果 |
+| --- | --- | --- | --- | --- |
+| `false`（二参重载的等价形态） | 跑 | 触发 | `delivered > 0` 时调用 | 护甲挡下则返回 false，**回调照发**、耐久照扣 |
+| `true` | 不跑 | 不触发 | 恒调用 | 投递路径上不再有任何 BF 判定环节（§1.2） |
+
+运行时行为重合的一种情形：承载者未穿戴 `BFArmorMaterial` 时，`false` 与 `true` 的实际效果相同。二者不冗余——`ignoreBFArmor` 表达**意图**（"这次命中已判定过，不要再判"），未穿戴表达**事实**（没有甲可判）；调用方无法预知承载者装备时应使用前者。
 
 ### 5.3 实现骨架
 
@@ -246,7 +283,7 @@ public static boolean deliverTo(Entity carrier, BFDamageContext ctx, boolean ign
     BFDamageHandler handler = ctx.getHandler();
     BFContextStack.INSTANCE.push(stackTargetOf(carrier));
     try {
-        // ---- 护甲层：与 hurt 的护甲分支同构 ----
+        // ---- 护甲层：与 hurt 的护甲分支同构（绕行范围见 §1.2 的 ⑤⑥）----
         if (!ignoreBFArmor
                 && carrier instanceof LivingEntity living
                 && BFArmorAdapter.hasBFArmor(living)) {
