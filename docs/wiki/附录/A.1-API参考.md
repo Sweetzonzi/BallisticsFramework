@@ -88,6 +88,36 @@ Component getPenetrationDisplayName() // 穿甲显示名（如"重型穿深"）
  */
 static float hurt(Object target, BFDamageContext ctx)
 
+// ========== 承载者投递 ==========
+
+/**
+ * 把一次已结算的伤害交给它的承载实体（carrier）。承载者穿戴的
+ * BFArmorMaterial 护甲参与本次判定。等价于 deliverTo(carrier, ctx, false)。
+ * @param carrier 承载实体；调用期内被压为上下文栈顶
+ * @param ctx     已修正的投递上下文：baseDamage 为穿透后的伤害量，
+ *                penetration 为到达承载者的残余穿深
+ * @return        是否落地，见 deliverTo(Entity, BFDamageContext, boolean)
+ */
+static boolean deliverTo(Entity carrier, BFDamageContext ctx)
+
+/**
+ * 把一次已结算的伤害交给它的承载实体，并可跳过承载者的贴身护甲层。
+ * 不做穿甲判定、不修正数值、不执行承载者作为 BFHurtTarget 的本体层、
+ * 不经过 BFHitResolver 路由。只做三件事：压栈 → 可选地过一遍承载者
+ * 穿戴的 BFArmorMaterial 护甲层 → 交给原版 carrier.hurt()。
+ * 调用时上下文栈中不得已存在正在结算的 BFHurtTarget，承载者自身也不例外；
+ * 承载者已在栈中时返回 false 并记录警告。
+ * @param carrier       承载实体
+ * @param ctx           已修正的投递上下文
+ * @param ignoreBFArmor true 表示完全绕开 BF 管线——不跑护甲层、不触发任何
+ *                      穿甲回调，伤害直接交给原版 hurt
+ * @return 是否落地。false 表示贴身护甲判定为未击穿/跳弹且 calculateFinalDamage
+ *         返回 0，或原版拒绝（无敌帧内且未超过上次伤害、已死亡、免疫、玩家受到
+ *         的伤害量恰为 0）。true 不保证扣了血：原版护甲、附魔、吸收都可能把伤害
+ *         削到 0。与护甲层回调配合即可区分"护甲挡下"与"原版拒绝"
+ */
+static boolean deliverTo(Entity carrier, BFDamageContext ctx, boolean ignoreBFArmor)
+
 // ========== 上下文查询 ==========
 
 /**
