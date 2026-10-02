@@ -6,7 +6,9 @@ plugins {
     // Mixin 注解处理器与 jar 清单注入。Forge 1.20.1 的 MixinPlatformAgentDefault 只从
     // 清单的 MixinConfigs 属性读取配置，mods.toml 的 [[mixins]] 不会被它识别；
     // 缺此插件时 Mixin 配置不注册、注入点静默失效。
-    id 'org.spongepowered.mixin' version '0.7.+'
+    // 0.7.38 是 org.spongepowered:mixingradle 的最新 release（该坐标的版本列表里
+    // 只有 0.7.31/0.7.32/0.7.33/0.7.36/0.7.38 为非快照，其余均带 -SNAPSHOT 后缀）。
+    id 'org.spongepowered.mixin' version '0.7.38'
 }
 
 version = mod_version
@@ -15,7 +17,7 @@ group = mod_group_id
 repositories {
     mavenLocal()
     mavenCentral()
-    // MixinGradle 的发布源（0.7.+ 为快照）
+    // MixinGradle 的发布源（0.7.38 为 release，见上方插件声明）
     maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
 }
 
