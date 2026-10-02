@@ -16,7 +16,7 @@
 
 - **Minecraft 1.21.1**, **NeoForge 21.1.219**, **Java 21**
 - **mod_id**: `ballistics_framework`, package: `io.github.sweetzonzi.ballistics_framework`
-- Current version: `1.0.0.alpha.9` (from `gradle.properties`)
+- Current version: `1.0.0.alpha.11` (from `gradle.properties`)
 - License: LGPL 3.0
 - Wiki (MkDocs) at `docs/`, CI deploys to GitHub Pages
 
@@ -35,16 +35,16 @@ api/
         └── RealisticTrajectory.java
 internal/  ← private impl — never reference from external mods
 mixin/     ← Mixin injection classes
-example/   ← example content (dev-only, gated by config)
+example/   ← example content (dev-only; enabled when !FMLLoader.isProduction())
 ```
 
 Key entrypoints: `api/BFDamageApi.hurt(Object target, BFDamageContext ctx)` (terminal ballistics), `api/trajectory/MinecraftTrajectory` and `api/trajectory/RealisticTrajectory` (external ballistics).
 
-Pipeline branches in `BFDamageApi.hurt()`:
+Pipeline branches in `BFDamageApi.hurt()` (编号与源码注释、`docs/wiki/4-协议内幕/4.1-穿甲判定管线.md` 一致，判定顺序即编号顺序):
+0. **BFHurtTarget + BFArmorMaterial armor** → armor layer first (with armor-layer callbacks), then entity body (with body-layer callbacks) — double pipeline with dual callback rounds
 1. **BFHurtTarget** → full pipeline via target's methods
-2. **BFHurtTarget + BFArmorMaterial armor** → armor layer first (with armor-layer callbacks), then entity body (with body-layer callbacks) — double pipeline with dual callback rounds
-3. **LivingEntity w/ BFArmorMaterial armor** → adapter wraps entity
-4. **Plain Entity** → vanilla `entity.hurt()` fallback
+2. **LivingEntity w/ BFArmorMaterial armor** → adapter wraps entity
+3. **Plain Entity** → vanilla `entity.hurt()` fallback
 
 Mixin interceptors (`EntityHurtMixin`, `LivingEntityHurtMixin`) catch non-protocol damage on protocol-aware targets, redirecting through `BFHurtInterceptor`.
 
