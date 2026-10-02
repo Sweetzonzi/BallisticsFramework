@@ -5,7 +5,7 @@
 ```bash
 # Build
 ./gradlew build
-# Output: build/libs/ballistics_framework-1.21.1-<version>.jar
+# Output: build/libs/ballistics_framework-1.20.1-forge-<version>.jar
 
 # Run all 8 GameTests (no GUI needed)
 ./gradlew runGameTestServer
@@ -14,18 +14,18 @@
 
 ## Project facts
 
-- **Minecraft 1.21.1**, **NeoForge 21.1.219**, **Java 21**
+- **Minecraft 1.20.1**, **Forge 47.4.0**, **Java 17**
 - **mod_id**: `ballistics_framework`, package: `io.github.sweetzonzi.ballistics_framework`
 - Current version: `1.0.0.alpha.11` (from `gradle.properties`)
 - License: LGPL 3.0
-- Wiki (MkDocs) at `docs/`, CI deploys to GitHub Pages
+- Wiki (MkDocs) at `docs/`; GitHub Pages deploys only from `1.21.1-neoforge` (see CI / Release)
 
 ## Architecture
 
 ```
 api/
   ├── (existing 12 terminal ballistics classes, zero changes)
-  └── trajectory/              ← external ballistics sub-package (new)
+  └── trajectory/              ← external ballistics sub-package
         ├── TrajectorySample.java
         ├── TrajectoryResult.java
         ├── FiringSolution.java
@@ -38,7 +38,7 @@ mixin/     ← Mixin injection classes
 example/   ← example content (dev-only; enabled when !FMLLoader.isProduction())
 ```
 
-Key entrypoints: `api/BFDamageApi.hurt(Object target, BFDamageContext ctx)` (terminal ballistics), `api/trajectory/MinecraftTrajectory` and `api/trajectory/RealisticTrajectory` (external ballistics).
+Key entrypoints: `api/BFDamageApi.hurt(Object target, BFDamageContext ctx)` (terminal ballistics entry), `api/BFDamageApi.deliverTo` (terminal ballistics carrier delivery), `api/trajectory/MinecraftTrajectory` and `api/trajectory/RealisticTrajectory` (external ballistics).
 
 Pipeline branches in `BFDamageApi.hurt()` (编号与源码注释、`docs/wiki/4-协议内幕/4.1-穿甲判定管线.md` 一致，判定顺序即编号顺序):
 0. **BFHurtTarget + BFArmorMaterial armor** → armor layer first (with armor-layer callbacks), then entity body (with body-layer callbacks) — double pipeline with dual callback rounds
@@ -74,6 +74,6 @@ Mixin interceptors (`EntityHurtMixin`, `LivingEntityHurtMixin`) catch non-protoc
 
 ## CI / Release
 
-- **Release**: push tag `v*` → builds with JDK 21, attaches jar to GitHub Release (prerelease)
+- **Release**: push tag `v*` → builds with JDK 17 (chosen by the workflow from `forge_version` presence), attaches jar to GitHub Release (prerelease)
 - **Pages**: push to `1.21.1-neoforge` branch with `docs/**` changes → builds MkDocs
 - Release workflow reads `gradle.properties` for mod metadata; also supports `workflow_dispatch` with version override

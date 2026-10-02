@@ -339,12 +339,12 @@ public class ProjectileHitResolverMixin {
         double speed = velocity.length();
         if (speed < 0.001) return;
 
-        // 搜索距离：取两 tick 飞行距离，使搜索方向与距离合并在单一矢量中
-        // 钳制在 [1.0, 8.0] 米
-        double clampedSpeed = Math.clamp(speed, 0.5, 4.0);
-        Vec3 delta = velocity.scale(clampedSpeed * 2.0 / speed);
+        // 搜索距离基于投射物速度动态计算：
+        // 取两 tick 飞行距离作为安全余量，钳制在 [1.0, 8.0] 米
+        double maxDistance = Math.clamp(speed * 2.0, 1.0, 8.0);
 
-        var resolved = BFDamageApi.resolveHitTarget(result, delta);
+        var resolved = BFDamageApi.resolveHitTarget(
+                result, velocity.scale(1.0 / speed), maxDistance);
         if (resolved == null) {
             ci.cancel();
         }
