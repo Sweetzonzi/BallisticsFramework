@@ -109,8 +109,9 @@ static boolean deliverTo(Entity carrier, BFDamageContext ctx)
  * 承载者已在栈中时返回 false 并记录警告。
  * @param carrier       承载实体
  * @param ctx           已修正的投递上下文
- * @param ignoreBFArmor true 表示完全绕开 BF 管线——不跑护甲层、不触发任何
- *                      穿甲回调，伤害直接交给原版 hurt
+ * @param ignoreBFArmor true 表示在"投递已绕开判定"的基础上，再跳过承载者穿戴的
+ *                      BFArmorMaterial 护甲层：不跑三件套、不触发任何穿甲回调、
+ *                      不消耗护甲耐久，伤害直接交给原版 hurt
  * @return 是否落地。false 表示贴身护甲判定为未击穿/跳弹且 calculateFinalDamage
  *         返回 0，或原版拒绝（无敌帧内且未超过上次伤害、已死亡、免疫、玩家受到
  *         的伤害量恰为 0）。true 不保证扣了血：原版护甲、附魔、吸收都可能把伤害
