@@ -1,6 +1,6 @@
 # BallisticsFramework GameTest 自动化测试指南
 
-> 版本：2026-05-12
+> 版本：2026-10-03
 > 适用项目：BallisticsFramework（弹道框架 — 内弹道、外弹道、终点弹道伤害协议层）
 > 构建系统：NeoForge / Gradle
 
@@ -206,6 +206,16 @@ target.setItemSlot(EquipmentSlot.LEGS, new ItemStack(ExampleContent.EXAMPLE_LEGG
 target.setItemSlot(EquipmentSlot.FEET, new ItemStack(ExampleContent.EXAMPLE_BOOTS.get()));
 ```
 
+承载者投递场景需要另外三个示例前置件（见 [BFDamageApi-deliverTo 投递计划](./BFDamageApi-deliverTo投递计划.md) §十）：
+
+| 前置件 | 用途 |
+|--------|------|
+| `ExampleProxyEntity`（`example_proxy`） | 宿主兼解析者：实现 `BFHitResolver`、不实现 `BFHurtTarget`，持有零件 |
+| `ExampleCarrierEntity`（`example_carrier`） | 承载者：实现 `BFHurtTarget`，记录本体层调用次数与 `hurt` 入参，并提供投递自检 / 无敌帧探针 |
+| `ExampleDeliveryArmorItem`（`example_delivery_chestplate`） | 15mm RHA（`ArmorLevel.MEDIUM`）的精密模式护甲，三件套与 `afterHurt` 各带静态调用计数 |
+
+这三个前置件都提供了测试用的调用记录；`ExampleDeliveryArmorItem` 的计数器是全类共享的静态字段，断言前必须调用 `ExampleDeliveryArmorItem.resetCounters()`。
+
 ### 2.10 回调验证：CallbackRecorder 模式
 
 当需要验证 `BFDamageHandler` 回调是否被正确触发时，使用内部类实现的"回调记录器"模式：
@@ -227,6 +237,8 @@ private static class CallbackRecorder implements BFDamageHandler {
 ```
 
 测试代码中，将 `CallbackRecorder` 注入 `BFDamageContext`，执行管线后检查各 boolean 字段即可验证回调触发情况。这种模式比检查日志字符串更可靠——它是强类型的程序化验证，不依赖字符串匹配。
+
+投递场景使用 `DeliveryRecorder`，它统计每个回调的**次数**（投递需要断言"各触发一次"），并把 `isOvermatch` / `isSpall` 覆写为 false：这两个判定的默认实现会通过 `target` 查询护甲物品的 `getRHA` / `modifyPenetration`，那些调用会混进护甲物品的计数器，使"三件套各一次"无法断言。
 
 ---
 
@@ -254,7 +266,7 @@ gradlew runGameTestServer
 
 测试完成后，控制台会输出 JUnit 风格的通过/失败统计：
 
-- **全部通过时**：显示类似 `All N tests passed` 的消息
+- **全部通过时**：显示类似 `All 19 required tests passed` 的消息
 - **有失败时**：显示失败的测试方法名、异常信息、堆栈跟踪
 
 ---
@@ -263,8 +275,10 @@ gradlew runGameTestServer
 
 ### 4.1 测试场景总览
 
-BallisticsFramework 实现了 8 个 GameTest 场景，覆盖 `example-包实现计划.md` 中定义的管线验证矩阵，
-并补充了同级击穿、低级阻挡、越级击穿三种穿甲判定关系的独立测试。
+BallisticsFramework 实现了 19 个 GameTest 场景：
+
+- **场景 1~8**：穿甲判定管线。覆盖 `example-包实现计划.md` 中定义的管线验证矩阵，并补充了同级击穿、低级阻挡、越级击穿三种穿甲判定关系的独立测试。
+- **场景 9~19**：承载者投递（`BFDamageApi.deliverTo`）。覆盖"伤害先落在部件上、最终由所属实体承受"的拓扑，也是仓库内首次把"实体 `hurt` → mixin → 拦截器"这条链路纳入自动化验证——投递落地经过它。完整验收约定见 [BFDamageApi-deliverTo 投递计划](./BFDamageApi-deliverTo投递计划.md) §十。
 
 | 测试方法 | 场景 | 攻击参数 | 目标 | 预期伤害 | 对应管线分支 |
 |---------|------|---------|------|---------|------------|
@@ -276,6 +290,17 @@ BallisticsFramework 实现了 8 个 GameTest 场景，覆盖 `example-包实现�
 | `testProjectileAgainstUnarmoredTarget` | 投射物打裸体靶子 | 200mm / 25HP | 裸体靶子 (0mm) | 25.0 | **分支1** + 回调验证 |
 | `testHurtAgainstVanillaEntity` | 投射物打普通实体 | 200mm / 5HP | 僵尸（非协议） | > 0 | **分支3**：原版回退 |
 | `testVanillaDamageFallback` | 原版伤害走原版 | 原版 generic / 5HP | 靶子实体 | 扣血 | 不触发管线 |
+| `testDeliverFirstPassRoutesToPart` | 第一趟路由到零件 | 60mm / 15HP | 宿主（解析者）+ 零件 | 15.0 打在零件上 | 调用方 `resolveHitTarget` + **分支1** |
+| `testDeliverLandsOnCarrier` | 投递落地 | 15HP / 残余 30mm | 宿主（承载者，无护甲） | 生命值下降 | `deliverTo` → 压栈 + 原版落地 |
+| `testDeliverDoesNotReroute` | 投递不重新路由 | 同上 | 宿主同时是 `BFHitResolver` | 生命值下降且 `resolveHit` 不增加 | `deliverTo` 不路由 |
+| `testDeliverCarrierArmorLayerPenetrates` | 贴身护甲击穿 | 18mm / 15HP | 承载者 + 15mm 护甲 | 9.75 落地 | `deliverTo` 护甲层（同级 ×0.65） |
+| `testDeliverCarrierArmorBlocks` | 贴身护甲挡下 | 5mm / 15HP | 承载者 + 15mm 护甲 | 0，返回 false | `deliverTo` 护甲层（BLOCKED） |
+| `testDeliverSkipsCarrierBodyLayer` | 投递不跑本体层 | 18mm / 15HP | 承载者（`BFHurtTarget`）+ 护甲 | 本体层计数 0、护甲层各 1 | `deliverTo` 只跑护甲层 |
+| `testDeliverIgnoresBFArmor` | `ignoreBFArmor = true` | 5mm / 15HP | 承载者 + 15mm 护甲 | 15 直接落地 | 投递路径无 BF 判定环节 |
+| `testDeliverRejectsRedelivery` | 入口自检 | 60mm / 10HP | 承载者（`hurt` 内再投递自己） | 只扣一次血 | `deliverTo` 入口自检拒绝 |
+| `testDeliverZeroDamage` | 零伤害早退 | 18mm / 0HP | 承载者 + 15mm 护甲 | 无副作用 | `deliverTo` 零伤害早退 |
+| `testDeliverCarrierInvulnerable` | 原版免疫 | 18mm / 15HP | 承载者（`setInvulnerable`） | 不扣血，返回 false | 原版 `isInvulnerableTo` 拒绝 |
+| `testDeliverCarrierHurtCooldown` | 原版无敌帧窗口 | 18mm / 15HP | 承载者（`invulnerableTime > 10`、`lastHurt` 更大） | 不扣血，返回 false | 原版 20 tick 窗口拒绝 |
 
 ### 4.2 管线分支说明
 
@@ -296,7 +321,7 @@ BFDamageApi.hurt(Object target, BFDamageContext ctx)
         → 调用 entity.hurt(source, amount) 走原版伤害
 ```
 
-### 4.3 各场景详细说明
+### 4.3 各场景详细说明（场景 1~8）
 
 #### 场景1：`testMeleeAgainstUnarmoredTarget` — 近战武器裸打靶子
 
@@ -366,6 +391,28 @@ BFDamageApi.hurt(Object target, BFDamageContext ctx)
 - **预期结果**：靶子生命值减少
 - **断言语义**：验证协议外伤害兼容机制正确工作——非协议来源伤害在 `createContextFromVanilla()` 返回 null 时正确放行
 
+### 4.4 承载者投递场景（场景 9~19）
+
+逐条验收约定由 [BFDamageApi-deliverTo 投递计划](./BFDamageApi-deliverTo投递计划.md) §十 拥有，本节只说明每个用例在测什么、靠什么观测。
+
+**观测手段**：`ExampleCarrierEntity` 记录本体层调用次数与 `hurt` 入参，`ExampleProxyEntity` 记录 `resolveHit` / `hurt` 调用，`ExampleDeliveryArmorItem` 记录护甲层三件套与 `afterHurt` 的调用次数，`DeliveryRecorder` 记录每个回调的次数。四种记录合起来可以把"哪一层跑了 / 没跑"和"落地量是多少"都变成数字断言。
+
+| 场景 | 在测什么 | 观测点 |
+|------|---------|--------|
+| 9 第一趟路由 | 协议入口不做路由；调用方自行 `resolveHitTarget` 后把伤害交给零件 | 零件 `hurt` 被调用、`resolveHit` 调用一次、宿主生命值不变 |
+| 10 投递落地 | 第二趟把结算结果交给承载者 | 返回值 true、生命值下降、`hurt` 进入时 `hasContextFor(宿主)` 为真 |
+| 11 不重新路由 | 承载者即使同时是 `BFHitResolver` 也不会被重新解析 | `resolveHit` 调用次数在投递期内不增加、无栈溢出 |
+| 12 贴身护甲击穿 | 18mm 穿深对 15mm 护甲（同属 MEDIUM）→ 同级击穿 | `hurt` 收到 9.75、护甲层 `before*` / `on*` 各一次、三件套与 `afterHurt` 各一次、本体层 0 次 |
+| 13 贴身护甲挡下 | 5mm 穿深对 15mm 护甲 → 未击穿 | 返回 false、生命值不变、`hurt` 未被调用、`onBlocked` 一次、`afterHurt` 仍一次 |
+| 14 不跑本体层 | 承载者同时是 `BFHurtTarget` 时，投递只跑护甲层 | 对照：作为协议目标时本体层 1/1；作为承载者时 0/0、护甲层各 1 |
+| 15 `ignoreBFArmor` | 跳过护甲层后伤害原样落地 | 返回 true、收到 15、护甲物品计数全 0、handler 无回调 |
+| 16 入口自检 | 承载者在自己的 `hurt` 内再投递一次自己 | 探针触发、内层投递被拒绝、`hurt` 只进入一次、生命值只降一次 |
+| 17 零伤害早退 | `baseDamage == 0` 无副作用 | 返回 false、`hurt` 未调用、无回调、护甲层未跑 |
+| 18 原版免疫 | `false` 来自原版而非护甲 | 生命值不变，但护甲层判定为击穿且回调已发 |
+| 19 无敌帧窗口 | `invulnerableTime > 10` 且不超过 `lastHurt` | 生命值不变，护甲层已跑且判定为击穿 |
+
+场景 18、19 的"读生命值而不只看布尔返回"是有意的：`deliverTo` 返回 `false` 有两种来源（护甲挡下 / 原版拒绝），只断言布尔值无法区分，因此每个用例都额外断言护甲层的判定结果。
+
 ---
 
 ## 5. 如何解读测试输出
@@ -381,7 +428,7 @@ BFDamageApi.hurt(Object target, BFDamageContext ctx)
 [GameTest] Running test: ballistics_framework:testMeleeSameLevelPenetration
 [GameTest] ✓ ballistics_framework:testMeleeSameLevelPenetration
 ...
-[GameTest] All 8 tests passed
+[GameTest] All 19 required tests passed
 ```
 
 退出码为 0，表示全部通过。
@@ -455,7 +502,7 @@ Agent 应依据以下规则判断测试是否通过：
 
 1. **退出码**：0 = 全部通过，非 0 = 至少一个测试失败
 2. **控制台关键词**：
-   - 含 `All N tests passed` → 全部通过
+   - 含 `All 19 required tests passed` → 全部通过
    - 含 `failed` 或 `GameTestAssertException` → 有失败
 3. **详细结果**：可解析控制台 JUnit 风格输出获取每个测试方法的状态
 

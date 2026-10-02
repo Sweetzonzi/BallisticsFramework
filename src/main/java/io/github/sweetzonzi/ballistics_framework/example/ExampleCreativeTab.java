@@ -16,7 +16,7 @@ import org.slf4j.Logger;
  * 两个标签页：
  * <ul>
  *   <li>{@code example_weapons} — 武器（近战武器 + 投射物发射器）</li>
- *   <li>{@code example_equipment} — 护甲套装（头盔、胸甲、护腿、靴子）</li>
+ *   <li>{@code example_equipment} — 护甲（头盔、胸甲、护腿、靴子四件套 + 投递测试胸甲）</li>
  * </ul>
  */
 public final class ExampleCreativeTab {
@@ -40,7 +40,7 @@ public final class ExampleCreativeTab {
                     .build()
     );
 
-    /** 护甲标签页：放置示例护甲四件套 */
+    /** 护甲标签页：放置示例护甲四件套与投递测试胸甲 */
     public static final RegistryObject<CreativeModeTab> EXAMPLE_EQUIPMENT = TABS.register(
             "example_equipment",
             () -> CreativeModeTab.builder()
@@ -51,6 +51,7 @@ public final class ExampleCreativeTab {
                         output.accept(ExampleContent.EXAMPLE_CHESTPLATE.get());
                         output.accept(ExampleContent.EXAMPLE_LEGGINGS.get());
                         output.accept(ExampleContent.EXAMPLE_BOOTS.get());
+                        output.accept(ExampleContent.EXAMPLE_DELIVERY_CHESTPLATE.get());
                     })
                     .build()
     );

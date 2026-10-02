@@ -54,7 +54,7 @@
 ### 护甲适配器（BFArmorAdapter）
 
 - **职责**：内部适配器，将穿戴了 BFArmorMaterial 护甲的 LivingEntity 包裹为 BFHurtTarget
-- **描述**：内部实现类（非公开 API），外部模组不可直接引用。在管线首次调用时惰性解析命中槽位（先按 `mapHitToSlot` 精确匹配，无命中点时退回到取最高护甲等级的保守策略），整个管线周期内缓存解析结果。逐方法委托到对应槽位护甲的 `BFArmorMaterial` 方法，使护甲模组拥有与 `BFHurtTarget` 实现者同等的定制权限。`hurt()` 委托 `entity.hurt()` 走原版管线，因此原版 ARMOR/ARMOR_TOUGHNESS/保护附魔会进行二次减免（两层防护模型）。`createContextFromVanilla()` 遍历全部护甲槽位委托给护甲物品，任一件返回非 null 即接管。
+- **描述**：内部实现类（非公开 API），外部模组不可直接引用。在管线首次调用时惰性解析命中槽位（先按 `mapHitToSlot` 精确匹配，无命中点时退回到取最高护甲等级的保守策略），整个管线周期内缓存解析结果。逐方法委托到对应槽位护甲的 `BFArmorMaterial` 方法，使护甲模组拥有与 `BFHurtTarget` 实现者同等的定制权限。`hurt()` 委托 `entity.hurt()` 走原版管线，因此原版 ARMOR/ARMOR_TOUGHNESS/保护附魔会进行二次减免（两层防护模型）。`createContextFromVanilla()` 遍历全部护甲槽位委托给护甲物品，任一件返回非 null 即接管。静态入口 `reduceForCarrier(adapter, ctx)` 供承载者投递使用：只跑护甲层三件套并返回结果数据（`CarrierArmorResult`），不触发回调、不进入本体层——回调编排留在 `BFDamageApi.deliverTo()`。`armorAfterHurt()` 自行触发惰性槽位解析，因此对调用顺序不作要求。
 - **关键类**：
   - `io.github.sweetzonzi.ballistics_framework.internal.BFArmorAdapter` — 适配器实现
   - `io.github.sweetzonzi.ballistics_framework.api.BFArmorMaterial` — 被委托的护甲接口
@@ -94,7 +94,7 @@
 ### ThreadLocal 上下文栈（BFContextStack）
 
 - **职责**：在调用链内隐式传播命中上下文，并提供重入守卫
-- **描述**：由于原版 `hurt` 方法签名无法传递额外参数，协议层使用 `ThreadLocal<Deque<Entry>>` 栈在调用链内传播 `(target, context)` 对。栈元素绑定目标实体（`==` 引用比较），精确区分"同一目标的协议管线内重入"（放行原版）与"副作用触发的新目标伤害如荆棘反伤"（进入协议拦截）。push/pop 由 `BFDamageApi.hurt()` 的 try/finally 保证成对出现。空栈 pop 时记录错误日志以便调试调用链不匹配的 bug。
+- **描述**：由于原版 `hurt` 方法签名无法传递额外参数，协议层使用 `ThreadLocal<Deque<Entry>>` 栈在调用链内传播 `(target, context)` 对。栈元素绑定目标实体（`==` 引用比较），精确区分"同一目标的协议管线内重入"（放行原版）与"副作用触发的新目标伤害如荆棘反伤"（进入协议拦截）。push/pop 由 `BFDamageApi.hurt()` 与 `BFDamageApi.deliverTo()` 的 try/finally 保证成对出现，压栈目标都由 `BFDamageApi` 的私有静态方法 `stackTargetOf` 选取。`hasContextFor` 只比较栈顶：它既是 mixin 的重入守卫，也是投递入口的自检判据。空栈 pop 时记录错误日志以便调试调用链不匹配的 bug。
 - **关键类**：
   - `io.github.sweetzonzi.ballistics_framework.internal.BFContextStack` — 栈管理单例
   - `io.github.sweetzonzi.ballistics_framework.api.BFDamageApi` — 负责 push/pop 的调用者
@@ -182,7 +182,7 @@
 ### 协议层对外入口（BFDamageApi）
 
 - **职责**：协议层的唯一静态入口，封装 ThreadLocal 栈管理、管线执行和回调触发
-- **描述**：`hurt(Object, BFDamageContext)` 发起协议伤害，内部完成四路分支调度（复合目标 BFHurtTarget + BFArmorMaterial → 护甲层与本体层双层串联 / BFHurtTarget → 直接管线 / LivingEntity + BFArmorMaterial → 适配器管线 / 普通 Entity → 原版回退）和 try/finally 栈管理；`hasContextFor(Object)` 供 mixin 判断重入；`getContextFor(Object)` 供管线方法内部取回当前上下文以读取命中信息播放特效等。命中前解析一组：`isProtocolAware(Object)` 判断命中对象是否实现 `BFHitResolver` 或 `BFHurtTarget`；`resolveHitTarget(Object, Vec3, Vec3)` 与 `resolveHitTarget(HitResult, Vec3)` 解析实际目标，命中对象不限于实体，另有实体版重载（`isProtocolAware(Entity)`、`resolveHitTarget(Entity, Vec3, Vec3)`）标记 `@Deprecated`，仅作二进制兼容转发。`hurt` 的返回值是协议计算伤害量，由于原版护甲二次减免，此值 ≥ 实体实际减少的 HP。
+- **描述**：`hurt(Object, BFDamageContext)` 发起协议伤害，内部完成四路分支调度（复合目标 BFHurtTarget + BFArmorMaterial → 护甲层与本体层双层串联 / BFHurtTarget → 直接管线 / LivingEntity + BFArmorMaterial → 适配器管线 / 普通 Entity → 原版回退）和 try/finally 栈管理；`deliverTo(Entity, BFDamageContext)` 与其跳过护甲层的重载承担**承载者投递**——把一次已结算的伤害交给它的承载实体，压栈后只跑承载者穿戴的护甲层再交原版 `hurt`，不做穿甲判定、不跑本体层、不经过 `BFHitResolver` 路由（契约见 `docs/BFDamageApi-deliverTo投递计划.md`）；`hasContextFor(Object)` 供 mixin 判断重入，也被投递入口用作自检；`getContextFor(Object)` 供管线方法内部取回当前上下文以读取命中信息播放特效等。命中前解析一组：`isProtocolAware(Object)` 判断命中对象是否实现 `BFHitResolver` 或 `BFHurtTarget`；`resolveHitTarget(Object, Vec3, Vec3)` 与 `resolveHitTarget(HitResult, Vec3)` 解析实际目标，命中对象不限于实体，另有实体版重载（`isProtocolAware(Entity)`、`resolveHitTarget(Entity, Vec3, Vec3)`）标记 `@Deprecated`，仅作二进制兼容转发。`hurt` 的返回值是协议计算伤害量，由于原版护甲二次减免，此值 ≥ 实体实际减少的 HP；`deliverTo` 的返回值是"是否落地"。
 - **关键类**：
   - `io.github.sweetzonzi.ballistics_framework.api.BFDamageApi` — 伤害入口 + 上下文查询 + 命中前解析
   - `io.github.sweetzonzi.ballistics_framework.internal.BFContextStack` — 被委托的栈操作

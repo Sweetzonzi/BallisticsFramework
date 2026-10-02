@@ -14,7 +14,7 @@ repositories {
 }
 
 base {
-    // Jar 文件名：ballistics_framework-1.20.1-forge-1.0.0.alpha.6.jar
+    // Jar 文件名：ballistics_framework-1.20.1-forge-1.0.0.alpha.12.jar
     archivesName = "${mod_id}-${minecraft_version}-forge"
 }
 

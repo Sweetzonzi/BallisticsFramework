@@ -33,6 +33,19 @@ public final class BFArmorAdapter implements BFHurtTarget {
             0.10f,  // FEET：面积最小——10%
     };
 
+    /**
+     * 投递期护甲层的三件套结果（见 {@code BFDamageApi#deliverTo}）。
+     * <p>
+     * 只承载数据，不触发任何回调——护甲层的回调编排留在 {@code BFDamageApi}。
+     *
+     * @param armorResult 该层的穿甲结果（{@link PenetrationResult}）
+     * @param residualPen 该层修正后的残余穿深（mm RHA）
+     * @param delivered   该层折算后的投递伤害量；0 表示被该层挡下
+     */
+    public record CarrierArmorResult(PenetrationResult armorResult,
+                                     float residualPen,
+                                     float delivered) {}
+
     private final LivingEntity entity;
 
     @Nullable
@@ -149,6 +162,27 @@ public final class BFArmorAdapter implements BFHurtTarget {
         return false;
     }
 
+    /**
+     * 投递期护甲层的三件套：{@code modifyPenetration} → {@code resolvePenetration}
+     * → {@code calculateFinalDamage}。
+     * <p>
+     * 只在承载者穿戴的护甲物品上跑这三步，<b>不触碰本体层、不触发任何回调</b>——
+     * 回调由 {@code BFDamageApi#deliverTo} 在拿到结果后自行编排（顺序见该方法的 Javadoc）。
+     * <p>
+     * 三件套会解析传入适配器的槽位；随后在同一实例上调用 {@link #armorAfterHurt} 与触发
+     * 回调即可复用这次解析。传另一个实例也能工作——{@link #armorAfterHurt} 会自行惰性解析。
+     *
+     * @param adapter 面向承载者的护甲适配器（已绑定被包裹的实体）
+     * @param ctx     投递上下文，{@code penetration} 是打在贴身护甲上的穿深
+     * @return 三件套结果；{@code delivered == 0} 表示被该层挡下
+     */
+    public static CarrierArmorResult reduceForCarrier(BFArmorAdapter adapter, BFDamageContext ctx) {
+        float residualPen = adapter.modifyPenetration(ctx);
+        PenetrationResult armorResult = adapter.resolvePenetration(ctx);
+        float delivered = adapter.calculateFinalDamage(ctx, armorResult);
+        return new CarrierArmorResult(armorResult, residualPen, delivered);
+    }
+
     // ======================== BFHurtTarget 管线方法（委托给护甲物品） ========================
 
     @Override
@@ -207,12 +241,16 @@ public final class BFArmorAdapter implements BFHurtTarget {
      * <p>
      * 由 {@code BFDamageApi} 在护甲层管线末尾、实体 {@code hurt()} 之前调用。
      * 兜底模式下同样委托给最高等级槽位的护甲物品。
+     * <p>
+     * 本方法自行触发惰性槽位解析：调用方若不是那个跑过三件套的适配器实例
+     * （投递期用独立实例承载回调），也能正确委托到护甲物品。
      *
      * @param ctx         完整命中上下文
      * @param result      穿甲结果
      * @param finalDamage {@link #calculateFinalDamage} 计算出的最终伤害量
      */
     public void armorAfterHurt(BFDamageContext ctx, PenetrationResult result, float finalDamage) {
+        ensureResolved(ctx);
         if (resolvedMaterial != null && resolvedSlot != null) {
             resolvedMaterial.afterHurt(entity, resolvedSlot, ctx, result, finalDamage);
         }
