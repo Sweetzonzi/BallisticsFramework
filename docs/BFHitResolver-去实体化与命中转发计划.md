@@ -32,7 +32,7 @@
 
 改动集中在 `BFDamageApi`、`BFHitResolver`、`BFHurtInterceptor` 与 `ProjectileHitResolverMixin` 四处，另新增内部接口 `internal/BFHitResolveCache`（缓存载体契约，必须 `public`）。不触碰 `BFHurtTarget` 的接口定义、`BFDamageContext`、`BFDamageExtensions` 与穿甲管线。
 
-**本计划不把测试列为交付项**：Step 1-4 与 §八 的验证可由下游首次接入时按 §七 自查代替；若要补 GameTest，需先加一个示例代理实体，见 §八 末。
+**本计划不把测试列为交付项**：Step 1-4 与 §八 的验证可由下游首次接入时按 §七 自查代替；若要补 GameTest，示例代理实体已具备，缺的是投射物驱动代码，见 §八 末。
 
 ## 二、现状锚点
 
@@ -135,7 +135,7 @@ tick() 开始
 | `internal/BFHitResolveCache.java` | 新增 | 投射物命中结果缓存的载体接口与缓存记录类型。接口与 `CachedResolve` **必须是 `public`**（理由见 §五 Step 3.1） |
 | `internal/BFHurtInterceptor.java` | 修改 | 新增情况 3：代理解析 + 协议外伤害转发；投射物来源直接取用缓存的解析结果 |
 | `mixin/ProjectileHitResolverMixin.java` | 修改 | 实现 `BFHitResolveCache`；`onHit` 阶段写入解析结果；搜索矢量改用 `BFHitResolver.searchDelta` |
-| `example/gametest/BallisticsGameTest.java` | **可选** | 四项场景（情况 3 转发、假阳性不销毁、缓存一致性、穿透多目标）。本计划不把测试列为交付项，见 §八；若要落成测试，另需一个实现 `BFHitResolver` 的示例代理实体及其在 `ExampleContent` 中的注册（见 §八 末） |
+| `example/gametest/BallisticsGameTest.java` | **可选** | 四项场景（情况 3 转发、假阳性不销毁、缓存一致性、穿透多目标）。本计划不把测试列为交付项，见 §八。示例代理实体已在 `example/entity/ExampleProxyEntity.java` 落地并在 `example/ExampleContent.java` 注册（由承载者投递的 GameTest 使用）；剩余缺口是"投射物 `tick → onHit → hurt`"的驱动代码，见 §八 末 |
 | `AGENTS.md`（仓库根） | **可选** | 仅在新增 GameTest 场景时同步场景计数 |
 | `docs/wiki/1-快速上手/1.6-核心API速览.md` | 核对 | `resolveHitTarget` 两个签名条目 |
 | `docs/wiki/2-武器侧开发/2.6-代理实体与命中解析.md` | 核对 + 微调 | 去实体化说明与重载取舍表；`:98` 小节标题"两个重载的取舍"与其下 3 行表格不一致，一并修正；`:217` "单次命中最多触发两次解析"需按 G4 改写 |
@@ -589,7 +589,7 @@ if (self instanceof BFHitResolver) {
 | 同一场景中实际目标拒绝协议外伤害（`ctx == null`） | 放行原版流程；代理若是非生物实体，`Entity#hurt` 只 `markHurt()` 并返回 false（不掉血）；代理若是 `LivingEntity`，原版扣血会**真的扣在代理身上**——这正是 §七.5 要求代理不承载生命值的原因（已对照 `net.minecraft.world.entity.Entity#hurt` 与 `net.minecraft.world.entity.player.Player#hurt` 的反编译源码） |
 | 普通实体（两个接口都不实现） | 拦截器直接放行，零行为变化 |
 
-**关于测试**：本计划**不把 GameTest 列为交付项**。若后续要补，可行的是"情况 3 转发""假阳性不销毁""缓存一致性（高速投射物不丢伤害）""穿透多目标互不串扰"四项；但仓库当前没有任何 `BFHitResolver` 实现者，落成测试前需要先加一个示例代理实体（实现 `BFHitResolver`、不实现 `BFHurtTarget`）并在 `ExampleContent` 中注册，同时这些测试要自行搭建真实的"投射物 `tick → onHit → hurt`"链路——现有 8 个 GameTest 全部是手工构造 `ctx` 直接调 `BFDamageApi.hurt`，没有可复用的投射物驱动代码。缺测试时的替代验证方式：Downstream 首次接入时按 §七 逐条自查，或在创造模式下手持原版箭/雪球对代理实体实测。
+**关于测试**：本计划**不把 GameTest 列为交付项**。若后续要补，可行的是"情况 3 转发""假阳性不销毁""缓存一致性（高速投射物不丢伤害）""穿透多目标互不串扰"四项。仓库已有可用的示例代理实体 `example/entity/ExampleProxyEntity.java`（实现 `BFHitResolver`、不实现 `BFHurtTarget`，已在 `example/ExampleContent.java` 注册），但它服务于承载者投递的 GameTest（见 [BFDamageApi-deliverTo 投递计划](./BFDamageApi-deliverTo投递计划.md) §十），那些用例经 `resolveHitTarget` 直接路由，不驱动投射物；因此情况 3 转发本身仍没有自动化测试，补测需要自行搭建真实的"投射物 `tick → onHit → hurt`"链路——现有的 8 个管线场景与 11 个投递场景都是手工构造 `ctx` 后直接调用协议入口，没有可复用的投射物驱动代码。缺测试时的替代验证方式：Downstream 首次接入时按 §七 逐条自查，或在创造模式下手持原版箭/雪球对代理实体实测。
 
 ## 九、待实测确认项
 

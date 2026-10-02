@@ -6,7 +6,7 @@
 > - [BFHitResolver-实现计划.md](./BFHitResolver-实现计划.md) —— `BFHitResolver` / `BFHitResolveResult` / `resolveHitTarget` 的接口定义记录
 > - wiki：[3.5-协议外伤害兼容](./wiki/3-护甲侧开发/3.5-协议外伤害兼容.md)、[3.7-代理实体：实现 BFHitResolver](./wiki/3-护甲侧开发/3.7-代理实体：实现BFHitResolver.md)、[4.1-穿甲判定管线](./wiki/4-协议内幕/4.1-穿甲判定管线.md)、[4.3-ThreadLocal与Mixin](./wiki/4-协议内幕/4.3-ThreadLocal与Mixin.md)
 >
-> **自足性**：设计结论、判据与决策记录都写在本文内；其余文档可以只读引用而不必重述——但引用必须给得出坐标，取值规则见仓库根 [`AGENTS.md`](../AGENTS.md) 的 Documentation 一节（本仓库、兄弟仓库、外部库三种写法）。本文要新增、尚未存在于源码中的符号（`stackTargetOf`、`reduceForCarrier`、`CarrierArmorResult`）按本文 §号引用，符号落地后改为 `路径#符号`。
+> **自足性**：设计结论、判据与决策记录都写在本文内；其余文档可以只读引用而不必重述——但引用必须给得出坐标，取值规则见仓库根 [`AGENTS.md`](../AGENTS.md) 的 Documentation 一节（本仓库、兄弟仓库、外部库三种写法）。本文的符号按 `路径#符号` 引用：`api/BFDamageApi.java#deliverTo`、`api/BFDamageApi.java#stackTargetOf`、`internal/BFArmorAdapter.java#reduceForCarrier`、`internal/BFArmorAdapter.java#CarrierArmorResult`。
 >
 > **本文同时是实施依据与验收依据**：§五～§七 给出的签名、编排与调用契约即为落地形态；§十 的用例为验收清单。
 
@@ -236,9 +236,9 @@ public static boolean deliverTo(Entity carrier, BFDamageContext ctx)
  * <p>落地仍走原版 {@code hurt}，因此无敌帧、原版护甲、附魔、荆棘反伤与伤害事件
  * 全部保留。
  *
- * <p><b>调用约束</b>：调用时上下文栈中不得已存在任何正在结算的 {@code BFHurtTarget}，
- * 承载者自身也不例外。栈中已存在承载者时，本次投递被拒绝（返回 false）并记录警告；
- * 栈中存在其它目标时的后果见 §5.8。
+ * <p><b>调用约束</b>：调用时上下文栈顶不得已存在承载者自身。栈顶已是承载者时，本次投递
+ * 被拒绝（返回 false）并记录警告；栈顶是其它目标时投递仍会落地，但会把那一帧压在承载者
+ * 帧之下，后果见 §5.8。
  *
  * @param carrier       承载实体；调用期内被压为上下文栈顶，压栈目标取
  *                      {@code carrier.getBFEntity()}（与 {@link #hurt} 同一规则）
@@ -276,19 +276,20 @@ public static boolean deliverTo(Entity carrier, BFDamageContext ctx, boolean ign
     if (ctx.baseDamage() <= 0f) return false;
     if (carrier.level().isClientSide()) return false;
     if (hasContextFor(carrier)) {
-        BallisticsFramework.LOGGER.warn("deliverTo 被拒绝：承载者已在上下文栈中");
+        LOGGER.warn("deliverTo 被拒绝：承载者已在上下文栈中，class={}", carrier.getClass().getName());
         return false;
     }
 
     BFDamageHandler handler = ctx.getHandler();
-    BFContextStack.INSTANCE.push(stackTargetOf(carrier));
+    BFContextStack.INSTANCE.push(stackTargetOf(carrier), ctx);
     try {
         // ---- 护甲层：与 hurt 的护甲分支同构（绕行范围见 §1.2 的 ⑤⑥）----
+        float amount = ctx.baseDamage();
         if (!ignoreBFArmor
                 && carrier instanceof LivingEntity living
                 && BFArmorAdapter.hasBFArmor(living)) {
             BFArmorAdapter adapter = new BFArmorAdapter(living);
-            CarrierArmorResult r = BFArmorAdapter.reduceForCarrier(living, ctx);
+            CarrierArmorResult r = BFArmorAdapter.reduceForCarrier(adapter, ctx);
             // 伤害前回调——护甲层判定已确认
             if (handler != null) triggerBeforeCallbacks(handler, adapter, ctx, r.armorResult());
             // 护甲层 afterHurt（耐久损耗等，在 hurt 之前触发）
@@ -297,9 +298,10 @@ public static boolean deliverTo(Entity carrier, BFDamageContext ctx, boolean ign
             if (handler != null) triggerCallbacks(handler, adapter, ctx, r.armorResult());
 
             if (r.delivered() <= 0f) return false;      // 护甲挡下：回调已发、耐久已扣
+            amount = r.delivered();                     // 落地量取护甲层的折算结果
         }
         // ---- 本体层：不执行。直接落地 ----
-        return carrier.hurt(ctx.source(), ctx.baseDamage());
+        return carrier.hurt(ctx.source(), amount);
     } finally {
         BFContextStack.INSTANCE.pop();
     }
@@ -313,9 +315,8 @@ public record CarrierArmorResult(PenetrationResult armorResult,
                                  float residualPen,
                                  float delivered) {}
 
-/** 只在承载者穿戴的护甲物品上跑三件套，不触碰本体层、不触发回调。 */
-public static CarrierArmorResult reduceForCarrier(LivingEntity carrier, BFDamageContext ctx) {
-    BFArmorAdapter adapter = new BFArmorAdapter(carrier);
+/** 只在给定适配器上跑三件套，不触碰本体层、不触发回调。 */
+public static CarrierArmorResult reduceForCarrier(BFArmorAdapter adapter, BFDamageContext ctx) {
     float residualPen = adapter.modifyPenetration(ctx);
     PenetrationResult armorResult = adapter.resolvePenetration(ctx);
     float delivered = adapter.calculateFinalDamage(ctx, armorResult);
@@ -336,6 +337,8 @@ private static Object stackTargetOf(Object target) {
 要点：
 
 - **编排留在 `BFDamageApi`**，与 `hurt` 的护甲分支逐行同构（护甲三件套 → 伤害前回调 → `armorAfterHurt` → 伤害后回调 → 落地）。`BFArmorAdapter` 只提供数据，不触发回调——`triggerBeforeCallbacks` / `triggerCallbacks` 是 `api/BFDamageApi.java` 的 `private static` 方法，`internal` 包不可见。
+- **一个适配器实例承担整层**：投递期只构造一个 `internal/BFArmorAdapter.java#BFArmorAdapter`，三件套、`armorAfterHurt` 与两轮回调共用它——与 `hurt` 的护甲分支同构。`internal/BFArmorAdapter.java#reduceForCarrier` 因此接收该实例而不是实体：三件套在同一实例上解析槽位，随后的 `armorAfterHurt` 与回调复用它（`armorAfterHurt` 自身也会惰性解析，见 §5.5）。
+- **落地量取护甲层的折算结果**：护甲层跑过且 `delivered > 0` 时，交给原版 `hurt` 的是 `delivered`，不是 `ctx.baseDamage()`。否则 `calculateFinalDamage` 的折算会被丢弃，护甲层只剩"挡下 / 不挡下"这一个作用，§十 场景 4 的断言也无从成立。`ignoreBFArmor = true` 或承载者未穿戴协议护甲时，落地量才是 `ctx.baseDamage()`。
 - **`push` 早于护甲层**，因此投递期内 `getContextFor(carrier)` 与护甲物品的 `getContextFor(wearer)` 都返回传入的 `ctx`，见 §八。
 - **投递期只可能过一个护甲层。** 承载者穿戴 `BFArmorMaterial` 时跑该层；否则一层都不跑，直接交原版 `hurt`。两层以上的情形只出现在 §2.3 的"第一趟"，不属于投递。
 - **`amount <= 0f` 早退**：非正伤害量不产生任何副作用、不触发任何回调，返回 `false`。这是协议管线内"回调不取决于伤害量"规则的例外，理由见 §6.3。
@@ -376,6 +379,8 @@ private static Object stackTargetOf(Object target) {
 | 1 | `before*` | 该层的 `BFArmorAdapter` | 传入的 `ctx` | 该层的 `armorResult` |
 | 2 | `armorAfterHurt` | —— | 传入的 `ctx` | 该层的 `armorResult` |
 | 3 | `on*` | 该层的 `BFArmorAdapter` | 传入的 `ctx` | 该层的 `armorResult` |
+
+三件事共用同一个 `BFArmorAdapter` 实例（§5.3 的要点"一个适配器实例承担整层"）。`internal/BFArmorAdapter.java#armorAfterHurt` 自行触发惰性槽位解析，因此它对调用顺序不作要求：即便调用方传入的是尚未跑过三件套的实例，也会先解析槽位再委托到护甲物品。
 
 `armorAfterHurt` 委托到 `BFArmorMaterial#afterHurt`（耐久损耗、爆反消耗、碎裂降级、统计追踪）。**未击穿时它同样触发**：护甲挡下这一发本身就是一次命中，耐久应当消耗。
 
@@ -423,9 +428,9 @@ private static Object stackTargetOf(Object target) {
 
 ### 5.8 调用约束
 
-`deliverTo` 必须在**上下文栈中不存在正在结算的 `BFHurtTarget`** 时调用——承载者自身也不例外。§5.3 的实现以 `hasContextFor(carrier)` 做入口自检，命中即拒绝并记录警告。
+`deliverTo` 必须在**上下文栈中不存在正在结算的 `BFHurtTarget`** 时调用——承载者自身也不例外。§5.3 的实现以 `api/BFDamageApi.java#hasContextFor` 对承载者做入口自检，命中即拒绝并记录警告。该判据比较的是**栈顶**（`internal/BFContextStack.java#hasContextFor`），因此它拦住的是"承载者自己正在结算时又投递一次自己"这一种退化形态。
 
-自检只覆盖承载者一个身份，它拦不住"外层目标仍在结算"的调用（例如从发起方自己的 `hurt` 内投递）。那类调用虽然能正确落地，却会把外层帧压在承载者帧之下，使投递期内 `hasContextFor(外层目标)` 恒为 false——外层目标的下游钩子会把这当成一次新伤害而重新路由。因此该约束同时是**调用方义务**：
+自检只判承载者一个身份、且只判栈顶，它拦不住"外层目标仍在结算"的调用（例如从发起方自己的 `hurt` 内投递，或投递时承载者位于栈的更深层）。那类调用虽然能正确落地，却会把外层帧压在承载者帧之下，使投递期内 `hasContextFor(外层目标)` 恒为 false——外层目标的下游钩子会把这当成一次新伤害而重新路由。因此该约束同时是**调用方义务**：
 
 1. **推荐形态**：在结算相位（栈为空）投递，例如 `LevelTickEvent.Post`；
 2. **次选形态**：在发起方自己的 `hurt(source, amount)` 方法体内投递。此时外层的那一帧就是发起方，投递期内它不再需要被守卫；
@@ -456,7 +461,7 @@ private static Object stackTargetOf(Object target) {
 
 情况 1 只存在于 `Entity#hurt` 与 `LivingEntity#hurt` 两个被注入的方法体中（`mixin/EntityHurtMixin.java`、`mixin/LivingEntityHurtMixin.java`）。承载者若覆写 `hurt` 且不调用 `super.hurt(...)`，投递不会进入注入体、情况 1 无从命中——此时投递仍然按预期工作，因为**压栈本身已经让承载者退出 BF 管线的判定范围**：承载者覆写体里的 `BFDamageApi.getContextFor(this)` 返回非 null，该约定即"本次调用来自协议管线内部，直接落地"（见 `docs/wiki/3-护甲侧开发/3.1-实现BFHurtTarget.md` 的不委托 super.hurt() 的自定义处理一节）。**因此投递的终止不依赖"承载者的 `hurt` 是否调用 super"这一前提**；调用 super 只是让情况 1 也参与放行。
 
-**`hasContextFor` 是路由守卫，不是投递守卫。** 它回答"这次 `hurt` 要不要改道"，不回答"这次伤害是否已经投递过"。§5.3 的入口自检因此判的是"承载者是否已在栈中"，而不是"栈顶是否是承载者"。
+**`hasContextFor` 是路由守卫，不是投递守卫。** 它回答"这次 `hurt` 要不要改道"，不回答"这次伤害是否已经投递过"。§5.3 的入口自检因此判的是"承载者自己是不是栈顶"，而不是"承载者是否出现在栈的任意一层"。
 
 下游若在承载实体自己的 `hurt` 上另有钩子（兄弟仓库 ARMS-Core 的 `docs/宿主接入与伤害管线设计.md` §4.4 即如此设计：`Player#hurt` 的钩子以同一个 `hasContextFor` 为判据），该钩子同样会因为栈顶是承载实体而放行原版流程。**该钩子的判据必须写成"栈顶是本实体"**——写成"栈中存在任意目标即放行"会让落在发起方帧内的投递被静默吞掉。
 
@@ -473,17 +478,24 @@ private static Object stackTargetOf(Object target) {
 | --- | --- |
 | `api/BFDamageApi.java` | 新增 `deliverTo(Entity, BFDamageContext)` 与 `deliverTo(Entity, BFDamageContext, boolean)`；新增私有静态 `stackTargetOf`，`hurt` 改为调用它；类 Javadoc 补第二入口 |
 | `api/BFDamageHandler.java` | 类 Javadoc 补 §5.6 的约束：投递期回调的 `target` 是护甲层适配器、不得用于改写发起方自身状态 |
-| `internal/BFArmorAdapter.java` | 新增静态入口 `reduceForCarrier(LivingEntity, BFDamageContext)` 与结果类型 `CarrierArmorResult`：只做护甲层三件套，不触发回调、不进入本体层 |
-| `internal/BFContextStack.java` | 不改（`push` / `pop` / `hasContextFor` / `getContextFor` 的行为保持不变）；`#pop` 的错误日志措辞可顺带带上 `deliverTo` |
+| `internal/BFArmorAdapter.java` | 新增静态入口 `reduceForCarrier(BFArmorAdapter, BFDamageContext)` 与结果类型 `CarrierArmorResult`：只做护甲层三件套，不触发回调、不进入本体层；`#armorAfterHurt` 自行触发惰性槽位解析 |
+| `internal/BFContextStack.java` | `push` / `pop` / `hasContextFor` / `getContextFor` 的行为不变；`#pop` 的错误日志措辞带上 `deliverTo`，`#hasContextFor` 的 Javadoc 补"同一判据也被投递入口用作自检" |
 | `internal/BFHurtInterceptor.java` | 不改 |
 | `api/BFHitResolver.java` / `api/BFHurtTarget.java` / `api/BFDamageContext.java` / `api/BFDamageExtensions.java` / `api/BFArmorMaterial.java` | 不改 |
-| `example/entity/` | 新增示例代理实体：实现 `BFHitResolver`、不实现 `BFHurtTarget`，供 §十 场景 1/2/3 使用；在 `example/ExampleContent.java` 注册 |
+| `example/entity/ExampleProxyEntity.java` | 新增示例代理实体：实现 `BFHitResolver`、不实现 `BFHurtTarget`，持有零件并记录 `resolveHit` / `hurt` 调用，供 §十 场景 1/2/3 使用 |
+| `example/entity/ExampleCarrierEntity.java` | 新增示例承载者实体：实现 `BFHurtTarget`，记录本体层调用次数与 `hurt` 入参，并提供投递自检探针与无敌帧摆放探针，供 §十 场景 4~9 使用 |
+| `example/item/ExampleDeliveryArmorItem.java` | 新增 15mm RHA 的精密模式护甲：三件套与 `afterHurt` 各带调用计数，供 §十 场景 4~7 观测"这一层跑了没有" |
+| `example/ExampleContent.java` / `example/ExampleCreativeTab.java` | 注册上述两个实体与一件护甲 |
 | `example/gametest/BallisticsGameTest.java` | 新增 §十 的场景；类 Javadoc 的场景计数同步 |
 | `AGENTS.md`（仓库根） | 同步 GameTest 场景计数与版本号 |
 | `docs/wiki/附录/A.1-API参考.md` | `BFDamageApi` 的方法清单补 `deliverTo` 两个重载 |
 | `docs/终点弹道设计文档.md` | §二 的类职责行与 §十 的 `BFDamageApi` 方法清单补 `deliverTo` |
 | `docs/wiki/4-协议内幕/4.1-穿甲判定管线.md` | 入口小节补"发起"与"投递"两个入口的分工 |
+| `docs/wiki/4-协议内幕/4.3-ThreadLocal与Mixin.md` | push/pop 的调用者与公开入口清单补 `deliverTo` |
 | `docs/wiki/1-快速上手/1.6-核心API速览.md` | `BFDamageApi` 条目补 `deliverTo` |
+| `docs/glossary.md` | `BFDamageApi` / `BFContextStack` / `BFArmorAdapter` 三条术语的描述补投递入口 |
+| `docs/GameTest自动化指南.md` | 场景总览与详细说明补场景 9~19、前置件与 `DeliveryRecorder` |
+| `docs/BFHitResolver-去实体化与命中转发计划.md` | §八 末与文件清单：示例代理实体已落地，缺口收窄为投射物驱动代码 |
 
 **向后兼容**：`deliverTo` 是新增静态方法，既有调用方不受影响；`stackTargetOf` 是私有静态方法，不进入对外 API 面；`reduceForCarrier` 与 `CarrierArmorResult` 是 `internal` 包内的新增类型。
 
@@ -502,6 +514,14 @@ private static Object stackTargetOf(Object target) {
 
 **前置件**：`GameTestHelper#makeMockPlayer(GameType)` 返回的是 `net.minecraft.gametest.framework.GameTestHelper` 内的匿名 `Player` 子类，无法在其上追加 `BFHitResolver`。场景 1/2/3 因此需要一个新增的示例代理实体（实现 `BFHitResolver`、不实现 `BFHurtTarget`）。该前置件与《去实体化与命中转发计划》§八 末记录的是同一件工作。
 
+落地的前置件共三项，都在 `example/ExampleContent.java` 注册：
+
+| 前置件 | 角色 |
+| --- | --- |
+| `example/entity/ExampleProxyEntity.java` | 宿主兼解析者：持有零件、记录 `resolveHit` 与 `hurt` 调用（场景 1/2/3） |
+| `example/entity/ExampleCarrierEntity.java` | 承载者兼协议目标：记录本体层调用次数与 `hurt` 入参，并提供投递自检探针与无敌帧摆放探针（场景 4~9） |
+| `example/item/ExampleDeliveryArmorItem.java` | 15mm RHA 的精密模式护甲：三件套与 `afterHurt` 各带调用计数，使"这一层跑了没有"可断言（场景 4~7） |
+
 **mock 玩家的三条性质**（均是该匿名类自身的性质，不是可配置项）：
 
 1. 它**不加入 level、不参与 tick**，因此 `invulnerableTime` 不递减、`lastHurt` 在整条测试方法内共享。同一测试内第二次 `hurt` 会落在同一个 20 tick 窗口里：伤害不大于 `lastHurt` 时返回 false 且不掉血，更大时只扣差值。需要多次落地的用例必须自建多个 mock 玩家。
@@ -513,14 +533,16 @@ private static Object stackTargetOf(Object target) {
 1. **直击 + 路由**：宿主实现 `BFHitResolver`、零件实现 `BFHurtTarget`。以宿主为命中对象发起一次协议伤害，断言：零件耐久下降、`resolveHit` 被调用、宿主生命值**未**变化（第一趟不含投递）。
 2. **投递**：在上一场景之后调用 `deliverTo(宿主, ctx修正后)`，断言：宿主生命值按 `ctx.baseDamage()` 经原版管线后的结果下降、返回值为 `true`、调用期内 `hasContextFor(宿主)` 为真。
 3. **不递归**：在场景 2 中让宿主同时实现 `BFHitResolver`，断言整条链路在一次 `deliverTo` 内结束（`resolveHit` 不被调用第二次），且不抛栈溢出。
-4. **贴身护甲层**：承载者穿戴一件 `BFArmorMaterial`、`penetration` 取大于该护甲 RHA 的值。断言 `deliverTo` 返回 `true`、`carrier.hurt` 收到经 `calculateFinalDamage` 折算后的量，且该层的 `before*` / `on*` 各触发一次、`afterHurt` 触发一次。伤害来源用 `damageSources().mobAttack(...)` 或 `playerAttack(...)`——`damageSources().generic()` 属于 `bypasses_armor` 标签，会绕过原版护甲，使"协议层与本体层两处减免"被观测成一处。
-5. **贴身护甲独立击穿**：`penetration` 取小于该护甲 RHA 的值、`baseDamage > 0`。断言 `deliverTo` 返回 `false`、承载者生命值不变、该层 `onBlocked` 触发一次、`afterHurt` 仍触发一次（耐久消耗）。
+4. **贴身护甲层**：承载者穿戴 `example/item/ExampleDeliveryArmorItem.java`（RHA 15mm，落在 `ArmorLevel.MEDIUM` 带内），`penetration` 取 18mm——大于该护甲 RHA 且与该护甲同属 MEDIUM 等级，因此同时成立"穿深大于 RHA"与"同级击穿（伤害 ×0.65）"。断言 `deliverTo` 返回 `true`、`carrier.hurt` 收到经 `calculateFinalDamage` 折算后的量，且该层的 `before*` / `on*` 各触发一次、`afterHurt` 触发一次。伤害来源用 `damageSources().mobAttack(...)` 或 `playerAttack(...)`——`damageSources().generic()` 属于 `bypasses_armor` 标签，会绕过原版护甲，使"协议层与本体层两处减免"被观测成一处。
+5. **贴身护甲独立击穿**：`penetration` 取 5mm（小于该护甲 RHA）、`baseDamage > 0`。断言 `deliverTo` 返回 `false`、承载者生命值不变、该层 `onBlocked` 触发一次、`afterHurt` 仍触发一次（耐久消耗）。
 6. **承载者同时是 `BFHurtTarget`**：让承载者实现 `BFHurtTarget` 并记录其 `resolvePenetration` / `calculateFinalDamage` 的调用次数，断言投递期内本体层调用次数为 0 而护甲层三件套各调用 1 次。
 7. **`ignoreBFArmor = true`**：承载者穿戴 `BFArmorMaterial`，`penetration` 取小于该护甲 RHA 的值。断言：`deliverTo` 返回 `true`、承载者生命值下降、该护甲物品的三件套与 `afterHurt` **均未被调用**、handler 未收到任何回调。
-8. **重复投递与自检**：在承载者自己的 `hurt` 内再调用一次 `deliverTo(承载者, ...)`，断言第二次返回 `false` 并记录警告，不发生栈溢出。
+8. **重复投递与自检**：在承载者自己的 `hurt` 内再调用一次 `deliverTo(承载者, ...)`，断言第二次返回 `false` 并记录警告，不发生栈溢出。警告文本本身无法在 GameTest 中断言，测试断言的是"被拒绝"这件事与"不再进入 `hurt`"。
 9. **边界**：`ctx.baseDamage() == 0` 时返回 `false`、不调用 `carrier.hurt`、不触发任何回调。无敌帧路径单独成条：先 `carrier.setInvulnerable(true)` 验 `isInvulnerableTo`，再显式给定 `lastHurt` 验 20 tick 窗口路径。两种 `false` 都必须与"护甲挡下"区分开，因此断言要读生命值而不只是布尔返回。
 
 既有 8 个 GameTest 全部是手工构造 `ctx` 后直接调用 `BFDamageApi.hurt`，没有覆盖"`Entity#hurt` → mixin → 拦截器"这条链路。场景 2、3、8 是首次把该链路纳入自动化验证，落地时的调试成本会高于既有场景。
+
+**落地形态**：上述 9 条场景在 `example/gametest/BallisticsGameTest.java` 中落为 11 个 `@GameTest` 方法——第 9 条的三条边界（零伤害、原版免疫、20 tick 窗口）各需要一个未被触碰过的承载者，故拆成三个用例；与既有 8 个场景合计 19 个。运行 `./gradlew runGameTestServer`，全绿时输出 `All 19 required tests passed`，其中场景 4/5 的护甲层结果可在日志中对照 `投递期护甲 afterHurt: ... result=PENETRATED, finalDamage=9.75` 与 `... result=BLOCKED, finalDamage=0.0` 两行。
 
 ## 附录 A：设计决策记录
 
@@ -533,8 +555,8 @@ private static Object stackTargetOf(Object target) {
 | D3 | 投递期只触发护甲层回调，本体层回调与 `beforeNormalEntityHit` / `onNormalEntityHit` 一概不发 | 投递的伤害已经过外装判定，再发一轮结论等于让武器侧对同一次命中收到两次通知；这两个通用回调的语义是"协议没有做穿甲判定直接交原版"，与投递相反 |
 | D4 | 护甲挡下时仍触发该层回调与 `armorAfterHurt` | 护甲挡下一发本身就是一次命中，耐久应当消耗；挡下的结论也需要回报给发起方，返回值单靠布尔无法与"原版拒绝"区分 |
 | D5 | `push` 排在护甲层之前 | 让投递期内的 `getContextFor(carrier)` 与 `getContextFor(wearer)` 都返回传入的 `ctx`，与 `hurt` 的护甲分支同构 |
-| D6 | 投递期的三件套与回调编排留在 `BFDamageApi`，`BFArmorAdapter` 只返回数据 | `triggerBeforeCallbacks` / `triggerCallbacks` 是 `BFDamageApi` 的私有静态方法，`internal` 包不可见 |
-| D7 | 入口自检判"承载者是否已在上下文栈中"，而不是"栈顶是否是承载者" | `hasContextFor` 是路由守卫、不是投递守卫；判"已在栈中"同时拦住退化的自投递与同链路的重复投递 |
+| D6 | 投递期的三件套与回调编排留在 `BFDamageApi`，`BFArmorAdapter` 只返回数据；`reduceForCarrier` 接收适配器实例 | `triggerBeforeCallbacks` / `triggerCallbacks` 是 `BFDamageApi` 的私有静态方法，`internal` 包不可见；三件套与随后的 `armorAfterHurt` 落在同一个已解析槽位的适配器实例上，与 `hurt` 的护甲分支同构 |
+| D7 | 入口自检用 `hasContextFor(承载者)`，即"承载者自身是不是栈顶" | `internal/BFContextStack.java#hasContextFor` 比较的就是栈顶，且 §九 不动它的行为。该判据拦住"承载者的 `hurt` 内再投递一次自己"这一退化形态，并保证投递期压栈后承载者的 `hurt` 被重入守卫放行；栈更深处的目标不参与自检，由 §5.8 的调用方义务覆盖 |
 | D8 | 不改 `BFDamageContext` 的字段集合 | 区分"发起"与"投递"发生在调用点，由压栈与显式开关完成；承载者侧的判据是 `getContextFor` 返回非 null |
 
 ## 附录 B：待决

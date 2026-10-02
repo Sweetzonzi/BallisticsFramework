@@ -8,16 +8,16 @@
 # Output: build/libs/<mod_id>-<minecraft_version>-<loader>-<version>.jar
 #   (pattern from build.gradle archivesName; loader is "neoforge" or "forge")
 
-# Run all 8 GameTests (no GUI needed)
+# Run all 19 GameTests (no GUI needed)
 ./gradlew runGameTestServer
-# Exit code 0 = all pass; check output for "All N tests passed"
+# Exit code 0 = all pass; check output for "All N required tests passed"
 ```
 
 ## Project facts
 
 - **This repository carries one branch per loader**: `1.21.1-neoforge` (NeoForge, Java 21) and `1.20.1-forge` (Forge, Java 17). Platform details are branch-specific and authoritative in the checked-out branch's own config — read `gradle.properties` (`minecraft_version`, `neo_version` or `forge_version`, `mod_version`) and `build.gradle` (`archivesName`, `java.toolchain.languageVersion`). The branch name doubles as the release artifact's `-<loader>` suffix.
 - **mod_id**: `ballistics_framework`, package: `io.github.sweetzonzi.ballistics_framework` (identical on both branches)
-- Current version: `1.0.0.alpha.11` (from `gradle.properties`)
+- Current version: `1.0.0.alpha.12` (from `gradle.properties`)
 - License: LGPL 3.0
 - Wiki (MkDocs) at `docs/`; GitHub Pages deploys only from `1.21.1-neoforge` (see CI / Release)
 
@@ -51,10 +51,11 @@ Mixin interceptors (`EntityHurtMixin`, `LivingEntityHurtMixin`) catch non-protoc
 
 ## Testing quirks
 
-- GameTests live in `example/gametest/BallisticsGameTest.java` (8 scenarios)
+- GameTests live in `example/gametest/BallisticsGameTest.java` (19 scenarios: 8 penetration-pipeline + 11 carrier-delivery)
 - `@PrefixGameTestTemplate(false)` is required on the test class
 - Template arena (5x3x5 stone bricks) is built **programmatically** in `@BeforeBatch`, NOT loaded from a `.nbt` file
-- Use `CallbackRecorder` (inner class) for callback verification, not log scraping
+- Use `CallbackRecorder` (inner class) for callback verification, not log scraping; the delivery scenarios use `DeliveryRecorder`, which counts `before*` / `on*` calls and forces `isOvermatch` / `isSpall` to false so armor-item call counts stay exact
+- Carrier-delivery scenarios need the dev-only fixtures `example/entity/ExampleProxyEntity.java` (host / resolver, no `BFHurtTarget`), `example/entity/ExampleCarrierEntity.java` (carrier that is also a `BFHurtTarget`, with body-layer call counters and probes) and `example/item/ExampleDeliveryArmorItem.java` (15mm RHA armor whose three-piece and `afterHurt` calls are counted; call `ExampleDeliveryArmorItem.resetCounters()` before asserting on them)
 - Floating-point comparisons use epsilon `0.01f`
 - Test assertions throw `GameTestAssertException` (NOT JUnit assertions)
 - Each test must call `helper.succeed()` explicitly
@@ -72,6 +73,7 @@ Mixin interceptors (`EntityHurtMixin`, `LivingEntityHurtMixin`) catch non-protoc
 - Pipeline call order: `getRHA` → `modifyPenetration` → `resolvePenetration` → `calculateFinalDamage` → `hurt`
 - Handler callbacks fire in two phases per penetration layer: `before*` callbacks (pre-`hurt()`) and `on*` callbacks (post-`hurt()`)
 - For composite targets (branch 0), callbacks fire for BOTH armor layer and entity body layer — two rounds of callbacks
+- Carrier delivery (`api/BFDamageApi.deliverTo`): pushes the carrier, runs only the carrier's `BFArmorMaterial` layer (skippable via `ignoreBFArmor`), never re-runs the body layer and never re-routes through `BFHitResolver`. The plan `docs/BFDamageApi-deliverTo投递计划.md` owns the exact contract
 
 ## Documentation
 

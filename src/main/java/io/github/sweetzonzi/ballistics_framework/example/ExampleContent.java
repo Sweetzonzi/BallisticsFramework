@@ -1,9 +1,12 @@
 package io.github.sweetzonzi.ballistics_framework.example;
 
 import com.mojang.logging.LogUtils;
+import io.github.sweetzonzi.ballistics_framework.example.entity.ExampleCarrierEntity;
 import io.github.sweetzonzi.ballistics_framework.example.entity.ExampleProjectileEntity;
+import io.github.sweetzonzi.ballistics_framework.example.entity.ExampleProxyEntity;
 import io.github.sweetzonzi.ballistics_framework.example.entity.ExampleTargetEntity;
 import io.github.sweetzonzi.ballistics_framework.example.item.ExampleArmorItem;
+import io.github.sweetzonzi.ballistics_framework.example.item.ExampleDeliveryArmorItem;
 import io.github.sweetzonzi.ballistics_framework.example.item.ExampleMeleeWeapon;
 import io.github.sweetzonzi.ballistics_framework.example.item.ExampleProjectileItem;
 import net.minecraft.core.registries.Registries;
@@ -71,6 +74,12 @@ public final class ExampleContent {
             () -> new ExampleArmorItem(ArmorMaterials.IRON, ArmorItem.Type.BOOTS, new Item.Properties())
     );
 
+    /** 示例投递期护甲（胸甲，15mm RHA，精密模式） */
+    public static final DeferredItem<ExampleDeliveryArmorItem> EXAMPLE_DELIVERY_CHESTPLATE = ITEMS.register(
+            "example_delivery_chestplate",
+            () -> new ExampleDeliveryArmorItem(ArmorMaterials.IRON, ArmorItem.Type.CHESTPLATE, new Item.Properties())
+    );
+
     // ======================== 实体注册表 ========================
 
     private static final DeferredRegister<EntityType<?>> ENTITIES =
@@ -96,6 +105,28 @@ public final class ExampleContent {
                             .clientTrackingRange(80)
                             .updateInterval(3)
                             .build("example_target")
+            );
+
+    /** 示例代理实体（宿主：实现 BFHitResolver，不实现 BFHurtTarget） */
+    public static final DeferredHolder<EntityType<?>, EntityType<ExampleProxyEntity>> EXAMPLE_PROXY_ENTITY =
+            ENTITIES.register("example_proxy", () ->
+                    EntityType.Builder.<ExampleProxyEntity>of(
+                                    ExampleProxyEntity::new, MobCategory.MISC)
+                            .sized(0.6f, 1.8f)
+                            .clientTrackingRange(80)
+                            .updateInterval(3)
+                            .build("example_proxy")
+            );
+
+    /** 示例承载者实体（实现 BFHurtTarget，可作投递承载者） */
+    public static final DeferredHolder<EntityType<?>, EntityType<ExampleCarrierEntity>> EXAMPLE_CARRIER_ENTITY =
+            ENTITIES.register("example_carrier", () ->
+                    EntityType.Builder.<ExampleCarrierEntity>of(
+                                    ExampleCarrierEntity::new, MobCategory.MISC)
+                            .sized(0.6f, 1.8f)
+                            .clientTrackingRange(80)
+                            .updateInterval(3)
+                            .build("example_carrier")
             );
 
     private ExampleContent() {}
@@ -133,5 +164,9 @@ public final class ExampleContent {
     private static void onEntityAttributeCreation(EntityAttributeCreationEvent event) {
         event.put(EXAMPLE_TARGET_ENTITY.get(),
                 ExampleTargetEntity.createAttributes().build());
+        event.put(EXAMPLE_PROXY_ENTITY.get(),
+                ExampleProxyEntity.createAttributes().build());
+        event.put(EXAMPLE_CARRIER_ENTITY.get(),
+                ExampleCarrierEntity.createAttributes().build());
     }
 }

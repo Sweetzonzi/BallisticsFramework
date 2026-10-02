@@ -40,8 +40,9 @@ public final class BFContextStack {
     /**
      * 出栈。
      * <p>
-     * 正常情况下栈不应为空——push/pop 由 {@link BFDamageApi#hurt}
-     * 的 try/finally 保证成对出现。若栈为空说明调用链出现不匹配的 bug（例如在协议管线外误调 pop，
+     * 正常情况下栈不应为空——push/pop 由 {@link BFDamageApi#hurt} 与
+     * {@link BFDamageApi#deliverTo} 的 try/finally 保证成对出现。
+     * 若栈为空说明调用链出现不匹配的 bug（例如在协议管线外误调 pop，
      * 或 push 后由于异常未正确执行 finally 块导致栈帧泄漏但后续某次 pop 意外匹配），
      * 此时记录错误日志以便调试定位。
      */
@@ -50,7 +51,7 @@ public final class BFContextStack {
         if (deque.isEmpty()) {
             BallisticsFramework.LOGGER.error(
                     "BFContextStack.pop() 调用时栈已为空，表明存在 push/pop 不匹配的 bug。"
-                            + " 请检查 BFDamageApi.hurt() 的 try/finally 是否正确配对，"
+                            + " 请检查 BFDamageApi.hurt() / BFDamageApi.deliverTo() 的 try/finally 是否正确配对，"
                             + " 或是否有代码在协议管线外误调了 pop()。");
             return;
         }
@@ -62,6 +63,11 @@ public final class BFContextStack {
      * <p>
      * 用于 mixin 中的重入守卫：如果当前栈顶的 target 与调用 {@code hurt()} 的实体相同，
      * 说明是在协议管线内部调用，不应再次拦截。
+     * <p>
+     * 同一判据也被 {@link BFDamageApi#deliverTo} 用作入口自检。两者语义不同：
+     * 本方法只回答"栈顶是不是这个目标"，既不搜索整个栈、也不回答"这次伤害是否已经投递过"。
+     * 因此投递期压栈后，承载者的 {@code hurt} 会被重入守卫放行；而承载者已在栈顶时，
+     * 投递入口会拒绝这次投递。
      *
      * @param target 要检查的目标
      * @return true 如果栈非空且栈顶 target 与参数相同

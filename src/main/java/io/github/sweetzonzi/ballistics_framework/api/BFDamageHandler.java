@@ -31,6 +31,19 @@ import net.minecraft.world.entity.Entity;
  * {@link #onNormalEntityHit} 仅在目标为普通 Entity（非协议感知）时触发。
  * <p>
  * 回调在 {@link BFDamageApi#hurt} 的管线内、上下文栈出栈之前触发。
+ * <p>
+ * <b>投递期回调</b>：{@link BFDamageApi#deliverTo} 也会按其真正跑过的那一层触发
+ * {@code before*} / {@code on*}（投递期只可能跑承载者穿戴的
+ * {@link BFArmorMaterial} 护甲层，本体层与 {@code beforeNormalEntityHit} /
+ * {@code onNormalEntityHit} 一概不发）。投递期回调与发起期回调有三处差别：
+ * <ul>
+ *   <li>{@code target} 是该护甲层的适配器（{@code BFArmorAdapter}），不是发起方最初
+ *       命中的那个目标；</li>
+ *   <li>投递发生在第一趟结算之后，此时发起方（如投射物）的命中结果往往已经定案；</li>
+ *   <li>{@code BFArmorAdapter} 每次进入管线都是新实例，按 {@code target} 区分两次事件
+ *       只能比较引用身份，不能用 {@code equals}。</li>
+ * </ul>
+ * 因此实现不得依据投递期回调改写发起方自身状态（弹体销毁、跳弹、穿透后速度折算等）。
  */
 public interface BFDamageHandler {
 

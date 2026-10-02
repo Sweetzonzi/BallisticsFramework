@@ -104,9 +104,11 @@ static boolean deliverTo(Entity carrier, BFDamageContext ctx)
  * 把一次已结算的伤害交给它的承载实体，并可跳过承载者的贴身护甲层。
  * 不做穿甲判定、不修正数值、不执行承载者作为 BFHurtTarget 的本体层、
  * 不经过 BFHitResolver 路由。只做三件事：压栈 → 可选地过一遍承载者
- * 穿戴的 BFArmorMaterial 护甲层 → 交给原版 carrier.hurt()。
- * 调用时上下文栈中不得已存在正在结算的 BFHurtTarget，承载者自身也不例外；
- * 承载者已在栈中时返回 false 并记录警告。
+ * 穿戴的 BFArmorMaterial 护甲层 → 交给原版 carrier.hurt()。护甲层跑过
+ * 且折算结果大于 0 时，交给原版的是该折算结果，否则是 ctx.baseDamage()。
+ * 调用时上下文栈顶不得已存在承载者自身；栈顶已是承载者时返回 false 并
+ * 记录警告（判据即 hasContextFor，只比较栈顶；栈更深处的目标由调用方
+ * 保证，见投递计划的 §5.8）。契约归属：docs/BFDamageApi-deliverTo投递计划.md。
  * @param carrier       承载实体
  * @param ctx           已修正的投递上下文
  * @param ignoreBFArmor true 表示在"投递已绕开判定"的基础上，再跳过承载者穿戴的
