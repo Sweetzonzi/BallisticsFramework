@@ -25,6 +25,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.gametest.GameTestHolder;
+import net.minecraftforge.gametest.PrefixGameTestTemplate;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -48,6 +49,7 @@ import org.jetbrains.annotations.Nullable;
  * 断言精度说明：浮点数比较使用 {@link Math#abs 差值 ≤ 0.01} 容忍浮点误差。
  */
 @GameTestHolder("ballistics_framework")
+@PrefixGameTestTemplate(false)
 public class BallisticsGameTest {
 
     private static final float EPSILON = 0.01f;

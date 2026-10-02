@@ -59,6 +59,23 @@ minecraft {
                 }
             }
         }
+
+        // 无头运行 GameTest：Forge 1.20.1 的入口是 server Main 对 forge.gameTestServer
+        // 属性的分支（属性为真时改构造 GameTestServer），因此沿用 server 的启动方式，
+        // 只注入 gametest 相关属性。
+        gameTestServer {
+            workingDirectory project.file('run')
+            property 'forge.enableGameTest', 'true'
+            property 'forge.gameTestServer', 'true'
+            property 'forge.enabledGameTestNamespaces', mod_id
+            property 'forge.logging.console.level', 'debug'
+            args '--nogui'
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
     }
 }
 
