@@ -25,6 +25,18 @@ publishing {
                         name = mod_authors
                     }
                 }
+                // 清空依赖列表。本库是模组兼容层，加载器与 Minecraft 的 API 由使用方
+                // 自己的 mod 开发工具链提供（NeoForge/ForgeGradle 的 userdev 依赖），
+                // 不能也不需要由本库传递。
+                //
+                // 发布配置里的 `minecraft "..."` 依赖会被 from components.java 带进
+                // 元数据，而它引用的是开发用映射产物（形如
+                // net.minecraftforge:forge:1.20.1-47.4.0_mapped_official_1.20.1），
+                // 该版本不存在于任何公开仓库，消费方解析依赖时会直接失败。
+                withXml {
+                    def root = asNode()
+                    root.dependencies*.replaceNode {}
+                }
             }
         }
     }
@@ -39,4 +51,11 @@ publishing {
             }
         }
     }
+}
+
+// Gradle 模块元数据（.module）同样会带上发布配置里的 minecraft 依赖。
+// Gradle 消费方优先读 .module，只清 POM 不足以修好；本库无可传递依赖，
+// 因此直接关闭 .module 的生成，让消费方回退到已清洗的 POM。
+tasks.withType(GenerateModuleMetadata).configureEach {
+    enabled = false
 }
