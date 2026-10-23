@@ -16,6 +16,7 @@ group = mod_group_id
 
 repositories {
     mavenLocal()
+    // 测试依赖（JUnit 5）来自 Maven Central；运行期依赖仍优先走 mavenLocal
     mavenCentral()
     // MixinGradle 的发布源（0.7.38 为 release，见上方插件声明）
     maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
@@ -98,6 +99,21 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
 }
+
+// 纯 JUnit：api/trajectory 的求解器只依赖 net.minecraft.world.phys.Vec3（纯数据类）与本模块自身，
+// 因此测试不需要启动游戏。ForgeGradle 的 minecraft 依赖挂在 main 上，不会自动出现在
+// testCompileClasspath，这里把 main 的类路径并给 test。
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
+}
+
+tasks.named('test', Test) {
+    useJUnitPlatform()
+}
+
+sourceSets.test.compileClasspath += sourceSets.main.compileClasspath
+sourceSets.test.runtimeClasspath += sourceSets.main.runtimeClasspath
 
 // 发布产物必须自带 MixinConfigs 清单属性：MixinGradle 只为开发运行注入
 // --mixin.config 参数，而 MixinPlatformAgentDefault 读取的是清单属性，
