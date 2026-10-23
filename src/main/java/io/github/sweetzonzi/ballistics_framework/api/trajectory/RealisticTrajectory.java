@@ -24,6 +24,10 @@ import java.util.List;
  * 解算器自动识别退化路径（匀速直线、纯抛物线、直线减速），
  * 在不损失精度的情况下跳过分步积分。
  * <p>
+ * 可选发动机推力（{@link ThrustProfile}）：沿速度方向、大小恒定、只在给定时间窗内生效。
+ * 推力激活时正解改走发射竖直平面内的二维推进（横向加速度恒为零），反解跳过不含推力项的
+ * 解析捷径，动目标提前量用燃烧段平均速度做首轮粗估。
+ * <p>
  * 所有方法均为 {@code static} 且无内部状态，线程安全。
  */
 public final class RealisticTrajectory {
@@ -61,6 +65,39 @@ public final class RealisticTrajectory {
             Vec3 start, Vec3 velocity,
             BallisticConfig config, DensityFunction density
     ) {
+        return forwardSolve(start, velocity, config, density, ThrustProfile.NONE);
+    }
+
+    /**
+     * 带可选发动机推力的前向模拟。
+     * <p>
+     * 推力沿速度方向、大小恒定（{@code a_T = force / mass}），只在
+     * {@link ThrustProfile} 的时间窗内施加。分派门禁：先看推力是否激活，
+     * 再看 {@code isNoDrag} / {@code gravity == 0}——推力激活时不得进入下面四条
+     * 不含推力项的捷径（它们会把助推射程低估数倍）。
+     * <p>
+     * 初速为零时推力方向 {@code v̂} 无定义，本模型在静止点的极限 {@code a_T·v̂} 为 0，
+     * 因此按无推力处理（走既有退化路径）。
+     *
+     * @param start    发射位置（世界坐标，m）
+     * @param velocity 初速度矢量（m/s）
+     * @param config   弹丸参数（Cd, m, A, g, Δt, maxSteps）
+     * @param density  空气密度函数（逐位置查询）
+     * @param thrust   推力剖面，{@link ThrustProfile#NONE} 表示无推力
+     * @return 轨迹采样点列表
+     */
+    public static TrajectoryResult forwardSolve(
+            Vec3 start, Vec3 velocity,
+            BallisticConfig config, DensityFunction density, ThrustProfile thrust
+    ) {
+        if (thrust.isActive() && velocity.length() > 1e-10) {
+            if (config.gravity() == 0f) {
+                return isNoDrag(config)
+                        ? solveThrustNoDragSI(start, velocity, config, thrust)
+                        : solveThrustStraightDragSI(start, velocity, config, density, thrust);
+            }
+            return solveThrustReducedSI(start, velocity, config, density, thrust);
+        }
         // 退化路径 1：匀速直线运动（g=0, 无阻力）
         if (config.gravity() == 0f && isNoDrag(config)) {
             return solveLinearMotionSI(start, velocity, config);
@@ -170,6 +207,140 @@ public final class RealisticTrajectory {
         return new TrajectoryResult(samples);
     }
 
+    // ======================== 推力版正解（门禁内）=======================
+
+    /**
+     * 时间窗判定：第 {@code step} 步覆盖 {@code [(step−1)Δt, stepΔt)}，
+     * 左端点落在 {@code [startSeconds, endSeconds)} 内才施加推力。
+     * <p>
+     * 判定只看步序号与 Δt，不依赖“是否已施加过推力”，因此“最后一个施加推力的步”是确定的，
+     * 燃尽瞬间的状态可以被测试取出来另起无推力外推（见设计文档 T5）。
+     */
+    private static boolean thrustAppliedAtStep(int step, float dt, ThrustProfile thrust) {
+        double stepStart = (step - 1) * (double) dt;
+        return stepStart >= thrust.startSeconds() && stepStart < thrust.endSeconds();
+    }
+
+    /**
+     * 直线加速（g = 0、无阻力）：方向恒定，速度按窗口线性增长。
+     * <p>
+     * 每步只有加乘，无三角函数、无密度查询。离散递推与 {@link #solveLinearMotionSI} 同源，
+     * 因此窗口外的段与无推力解逐位重合。
+     */
+    private static TrajectoryResult solveThrustNoDragSI(
+            Vec3 start, Vec3 velocity, BallisticConfig config, ThrustProfile thrust
+    ) {
+        float dt = config.timeStep();
+        int maxSteps = config.maxSteps();
+        float aT = thrust.force() / config.mass();
+        Vec3 dir = velocity.normalize();
+        var samples = new ArrayList<TrajectorySample>(maxSteps + 1);
+        samples.add(new TrajectorySample(0f, start, velocity));
+        double speed = velocity.length();
+        Vec3 pos = start;
+        for (int i = 1; i <= maxSteps; i++) {
+            if (thrustAppliedAtStep(i, dt, thrust)) {
+                speed += aT * dt;
+            }
+            pos = pos.add(dir.scale(speed * dt));
+            samples.add(new TrajectorySample(i * dt, pos, dir.scale(speed)));
+        }
+        return new TrajectoryResult(samples);
+    }
+
+    /**
+     * 直线加速 + 阻力（g = 0）：方向恒定，速度走一维 ODE。
+     * <p>
+     * 推力与阻力都沿速度方向，横向分量恒为零，因此不需要二维推进。
+     */
+    private static TrajectoryResult solveThrustStraightDragSI(
+            Vec3 start, Vec3 velocity, BallisticConfig config,
+            DensityFunction density, ThrustProfile thrust
+    ) {
+        float dt = config.timeStep();
+        int maxSteps = config.maxSteps();
+        float aT = thrust.force() / config.mass();
+        float halfRhoRef = 0.5f * config.dragCoefficient() * config.crossSectionArea() / config.mass();
+        Vec3 dir = velocity.normalize();
+        var samples = new ArrayList<TrajectorySample>(maxSteps + 1);
+        samples.add(new TrajectorySample(0f, start, velocity));
+        double speed = velocity.length();
+        Vec3 pos = start;
+        for (int i = 1; i <= maxSteps; i++) {
+            double accel = -halfRhoRef * density.getDensity(pos) * speed * speed;
+            if (thrustAppliedAtStep(i, dt, thrust)) {
+                accel += aT;
+            }
+            speed = Math.max(0.0, speed + accel * dt);
+            pos = pos.add(dir.scale(speed * dt));
+            samples.add(new TrajectorySample(i * dt, pos, dir.scale(speed)));
+        }
+        return new TrajectoryResult(samples);
+    }
+
+    /**
+     * 推力 + 重力：发射竖直平面内的二维半隐式欧拉推进。
+     * <p>
+     * 推力沿速度、阻力反速度、重力竖直，三者都落在初始速度所在的竖直平面内，横向加速度
+     * 恒为零，因此只保留该平面的两个速度分量（沿水平方向 {@code u}、竖直 {@code w}）：
+     * <pre>{@code
+     * dv/dt = a_T·v̂ − ½·ρ·Cd·A·|v|·v/m − g·ŷ
+     * dx/dt = u,   dy/dt = w
+     * }</pre>
+     * 这里刻意不用极坐标 {@code (s, γ)}：极坐标的半隐式欧拉与笛卡尔半隐式欧拉是两种离散化，
+     * 10 s、300 m/s 量级的弹道累计差约 0.16 m；调用方（Machine-Max）的积分器是三维半隐式欧拉，
+     * 预测必须与之同式。平面笛卡尔分量逐步骤与三维全积分同式（只少一个恒为零的分量），
+     * 代价只是一次 {@code sqrt}（阻力本来就需要 {@code |v|}）。
+     */
+    private static TrajectoryResult solveThrustReducedSI(
+            Vec3 start, Vec3 velocity, BallisticConfig config,
+            DensityFunction density, ThrustProfile thrust
+    ) {
+        float dt = config.timeStep();
+        int maxSteps = config.maxSteps();
+        float gravity = config.gravity();
+        float aT = thrust.force() / config.mass();
+        float halfRhoRef = 0.5f * config.dragCoefficient() * config.crossSectionArea() / config.mass();
+
+        double horizSpeed = Math.hypot(velocity.x, velocity.z);
+        Vec3 horizDir = horizSpeed > 1e-12
+                ? new Vec3(velocity.x / horizSpeed, 0, velocity.z / horizSpeed)
+                : new Vec3(1, 0, 0);
+        double u = horizSpeed;
+        double w = velocity.y;
+        double along = 0;
+        double height = start.y;
+
+        var samples = new ArrayList<TrajectorySample>(maxSteps + 1);
+        samples.add(new TrajectorySample(0f, start, velocity));
+        for (int i = 1; i <= maxSteps; i++) {
+            Vec3 pos = new Vec3(start.x + horizDir.x * along, height, start.z + horizDir.z * along);
+            double vMag = Math.sqrt(u * u + w * w);
+            // 二次阻力（与三维全积分同式）
+            if (vMag > 1e-10) {
+                double dragFactor = halfRhoRef * density.getDensity(pos) * vMag;
+                u -= u * dragFactor * dt;
+                w -= w * dragFactor * dt;
+            }
+            // 推力沿速度方向
+            if (thrustAppliedAtStep(i, dt, thrust) && vMag > 1e-10) {
+                double thrustAccel = aT * dt / vMag;
+                u += u * thrustAccel;
+                w += w * thrustAccel;
+            }
+            // 重力
+            w -= gravity * dt;
+            // 位置更新（半隐式欧拉）
+            along += u * dt;
+            height += w * dt;
+
+            Vec3 samplePos = new Vec3(start.x + horizDir.x * along, height, start.z + horizDir.z * along);
+            Vec3 sampleVel = new Vec3(horizDir.x * u, w, horizDir.z * u);
+            samples.add(new TrajectorySample(i * dt, samplePos, sampleVel));
+        }
+        return new TrajectoryResult(samples);
+    }
+
     // ======================== 反解（出射仰角二分搜索）=======================
 
     /**
@@ -193,7 +364,8 @@ public final class RealisticTrajectory {
      * @param shooterVelocity 发射者自身速度（m/s），可为 Vec3.ZERO
      * @param config          弹丸参数
      * @param density         空气密度函数
-     * @param angleEpsilon    仰角收敛阈值（弧度），推荐 0.01（≈0.57°）
+     * @param angleEpsilon    仰角收敛阈值（弧度）。0.01（≈0.57°）在 1 km 射程上对应十米级落点误差；
+     *                        需要米级精度时传 1e-4
      * @return 0~2 个解（空列表表示初速不足，任何仰角都无法命中）
      */
     public static List<FiringSolution> solveFiringAngle(
@@ -202,29 +374,63 @@ public final class RealisticTrajectory {
             BallisticConfig config, DensityFunction density,
             float angleEpsilon
     ) {
+        return solveFiringAngle(start, target, speed, shooterVelocity,
+                config, density, angleEpsilon, ThrustProfile.NONE);
+    }
+
+    /**
+     * 带可选发动机推力的出射方向反解。
+     * <p>
+     * 推力激活时跳过三条不含推力项的解析捷径（匀速直线、纯抛物线解析公式、直线减速），
+     * 直接走完整二分——它们的射程估计会把助推弹压低数倍。二分内层求值使用推力版
+     * {@link #forwardSolve(Vec3, Vec3, BallisticConfig, DensityFunction, ThrustProfile)}。
+     * <p>
+     * 单峰性（射程随仰角先升后降）是二分的收敛前提，已由 T7 在文档给定的参数组上验证；
+     * 若极端参数破坏单峰，反解会收敛到错误的极值——届时按设计文档 §5.1 退化为粗扫 + 局部二分。
+     *
+     * @param start           发射位置（世界坐标，m）
+     * @param target          目标位置（世界坐标，m）
+     * @param speed           初速标量（m/s）
+     * @param shooterVelocity 发射者自身速度（m/s），可为 Vec3.ZERO
+     * @param config          弹丸参数
+     * @param density         空气密度函数
+     * @param angleEpsilon    仰角收敛阈值（弧度）。0.01（≈0.57°）在 1 km 射程上对应十米级落点误差；
+     *                        需要米级精度时传 1e-4
+     * @param thrust          推力剖面，{@link ThrustProfile#NONE} 表示无推力
+     * @return 0~2 个解（空列表表示初速不足，任何仰角都无法命中）
+     */
+    public static List<FiringSolution> solveFiringAngle(
+            Vec3 start, Vec3 target, float speed,
+            Vec3 shooterVelocity,
+            BallisticConfig config, DensityFunction density,
+            float angleEpsilon, ThrustProfile thrust
+    ) {
         Vec3 diff = target.subtract(start);
         float horizDist = (float) Math.sqrt(diff.x * diff.x + diff.z * diff.z);
 
-        // 退化路径 1：匀速直线运动（g=0, 无阻力）
-        if (config.gravity() == 0f && isNoDrag(config)) {
-            return solveLinearFiringSI(start, target, speed, shooterVelocity, diff, horizDist);
-        }
+        // 分派门禁：推力激活时不得进入下面三条不含推力项的捷径
+        if (!thrust.isActive()) {
+            // 退化路径 1：匀速直线运动（g=0, 无阻力）
+            if (config.gravity() == 0f && isNoDrag(config)) {
+                return solveLinearFiringSI(start, target, speed, shooterVelocity, diff, horizDist);
+            }
 
-        // 退化路径 2：纯抛物线（g≠0, 无阻力）
-        if (isNoDrag(config)) {
-            return solveParabolicFiringSI(start, target, speed, shooterVelocity,
-                    horizDist, (float) diff.y, config);
-        }
+            // 退化路径 2：纯抛物线（g≠0, 无阻力）
+            if (isNoDrag(config)) {
+                return solveParabolicFiringSI(start, target, speed, shooterVelocity,
+                        horizDist, (float) diff.y, config);
+            }
 
-        // 退化路径 3：直线减速（g=0, 有阻力）
-        if (config.gravity() == 0f) {
-            return solveDecelerationFiringSI(start, target, speed, shooterVelocity,
-                    diff, horizDist, config, density);
+            // 退化路径 3：直线减速（g=0, 有阻力）
+            if (config.gravity() == 0f) {
+                return solveDecelerationFiringSI(start, target, speed, shooterVelocity,
+                        diff, horizDist, config, density);
+            }
         }
 
         // 完整路径：二分搜索仰角
         return solveFullFiringAngleSI(start, target, speed, shooterVelocity,
-                config, density, angleEpsilon, horizDist, (float) diff.y);
+                config, density, angleEpsilon, horizDist, (float) diff.y, thrust);
     }
 
     /** 匀速直线反解——SI 版本 */
@@ -373,12 +579,12 @@ public final class RealisticTrajectory {
     private static List<FiringSolution> solveFullFiringAngleSI(
             Vec3 start, Vec3 target, float speed, Vec3 shooterVelocity,
             BallisticConfig config, DensityFunction density,
-            float angleEpsilon, float horizDist, float heightDiff
+            float angleEpsilon, float horizDist, float heightDiff, ThrustProfile thrust
     ) {
         if (horizDist < 1e-6f) {
             Vec3 dir = heightDiff >= 0 ? new Vec3(0, 1, 0) : new Vec3(0, -1, 0);
             Vec3 worldVel = dir.scale(speed).add(shooterVelocity);
-            TrajectoryResult result = forwardSolve(start, worldVel, config, density);
+            TrajectoryResult result = forwardSolve(start, worldVel, config, density, thrust);
             float minDist = Float.MAX_VALUE;
             TrajectorySample bestSample = null;
             for (var sample : result.samples()) {
@@ -401,14 +607,14 @@ public final class RealisticTrajectory {
 
         // 平射解搜索
         FiringSolution lowSol = binarySearchAngleSI(start, target, speed, shooterVelocity,
-                config, density, horizDir, thetaMin, thetaMid, angleEpsilon, false);
+                config, density, horizDir, thetaMin, thetaMid, angleEpsilon, false, thrust);
         if (lowSol != null) {
             solutions.add(lowSol);
         }
 
         // 高抛解搜索
         FiringSolution highSol = binarySearchAngleSI(start, target, speed, shooterVelocity,
-                config, density, horizDir, thetaMid, thetaMax, angleEpsilon, true);
+                config, density, horizDir, thetaMid, thetaMax, angleEpsilon, true, thrust);
         if (highSol != null) {
             if (solutions.isEmpty() || angleDiffSI(highSol.direction(), solutions.get(0).direction()) > angleEpsilon) {
                 solutions.add(highSol);
@@ -423,7 +629,7 @@ public final class RealisticTrajectory {
             Vec3 start, Vec3 target, float speed, Vec3 shooterVelocity,
             BallisticConfig config, DensityFunction density,
             Vec3 horizDir, float thetaLow, float thetaHigh, float epsilon,
-            boolean isHighArc
+            boolean isHighArc, ThrustProfile thrust
     ) {
         float bestTheta = (thetaLow + thetaHigh) / 2f;
         float bestDist = Float.MAX_VALUE;
@@ -435,7 +641,7 @@ public final class RealisticTrajectory {
             float theta = (thetaLow + thetaHigh) / 2f;
             Vec3 dir = buildDirectionSI(horizDir, theta);
             Vec3 worldVel = dir.scale(speed).add(shooterVelocity);
-            TrajectoryResult result = forwardSolve(start, worldVel, config, density);
+            TrajectoryResult result = forwardSolve(start, worldVel, config, density, thrust);
 
             float minDist = Float.MAX_VALUE;
             TrajectorySample bestSample = null;
@@ -460,7 +666,15 @@ public final class RealisticTrajectory {
                 break;
             }
 
-            boolean overshoot = checkHorizontalOvershootSI(result, target, horizDir);
+            // 判据与收敛残差都用“目标水平距离处的弹道高度”：弹道水平坐标单调递增，
+            // 不能用“任一采样点越过目标水平投影”——任何足够长的模拟都满足它。
+            double heightAtTarget = heightAtHorizontalDistanceSI(result, target, horizDir);
+            boolean reached = !Double.isNaN(heightAtTarget);
+            if (reached && Math.abs(heightAtTarget - target.y) < 0.1) {
+                break;
+            }
+
+            boolean overshoot = !reached || heightAtTarget > target.y;
             if (overshoot) {
                 thetaHigh = theta;
             } else {
@@ -483,17 +697,34 @@ public final class RealisticTrajectory {
         return new Vec3(horizDir.x * cosT, sinT, horizDir.z * cosT);
     }
 
-    /** 检查弹道水平方向是否超过目标——SI 版本 */
-    private static boolean checkHorizontalOvershootSI(TrajectoryResult result, Vec3 target, Vec3 horizDir) {
+    /**
+     * 目标水平距离处的弹道高度——SI 版本。
+     * <p>
+     * 沿 {@code horizDir} 找到第一个越过目标水平投影的采样点，按线性插值取该处高度。
+     * 轨迹在 {@code maxSteps} 内没有到达目标水平距离时返回 {@link Double#NaN}
+     * （射程不足，按“未越过”处理）。
+     */
+    private static double heightAtHorizontalDistanceSI(TrajectoryResult result, Vec3 target, Vec3 horizDir) {
+        Vec3 origin = result.first().position();
         Vec3 dir2d = new Vec3(horizDir.x, 0, horizDir.z);
-        double targetDot = target.subtract(result.first().position()).dot(dir2d);
+        double targetDot = target.subtract(origin).dot(dir2d);
+        Vec3 prev = origin;
+        double prevDot = 0;
         for (var sample : result.samples()) {
-            double sampleDot = sample.position().subtract(result.first().position()).dot(dir2d);
-            if (sampleDot > targetDot) {
-                return true;
+            Vec3 p = sample.position();
+            double dot = p.subtract(origin).dot(dir2d);
+            if (dot >= targetDot) {
+                double span = dot - prevDot;
+                if (span < 1e-9) {
+                    return p.y;
+                }
+                double f = (targetDot - prevDot) / span;
+                return prev.y + (p.y - prev.y) * f;
             }
+            prev = p;
+            prevDot = dot;
         }
-        return false;
+        return Double.NaN;
     }
 
     /** 两个方向向量之间的角度差（弧度）——SI 版本 */
@@ -529,9 +760,49 @@ public final class RealisticTrajectory {
             BallisticConfig config, DensityFunction density,
             int maxIterations, float convergeEpsilon
     ) {
-        // 首次粗略外推：distance/speed 估算飞行时间，让迭代起点靠近收敛点
+        return solveWithLead(start, targetPosition, targetVelocity, targetAcceleration,
+                speed, shooterVelocity, config, density,
+                maxIterations, convergeEpsilon, ThrustProfile.NONE);
+    }
+
+    /**
+     * 带可选发动机推力的动目标提前量反解。
+     * <p>
+     * 迭代结构不变（飞行时长为不动点，反解 → 飞行时间 → 目标预测点 → 再解）；推力只改变
+     * “给定仰角的飞行时长”本身，而这已经由推力版
+     * {@link #solveFiringAngle(Vec3, Vec3, float, Vec3, BallisticConfig, DensityFunction, float, ThrustProfile)}
+     * 提供。唯一的结构性差异是首轮粗估：助推弹的平均速度远高于出膛初速，仍按
+     * {@code distance / speed} 会把飞行时间低估数倍，因此推力激活时改用燃烧段平均速度
+     * {@code speed + a_T·(endSeconds − startSeconds) / 2}。
+     *
+     * @param start              发射位置（m）
+     * @param targetPosition     目标当前位置（m）
+     * @param targetVelocity     目标速度矢量（m/s）
+     * @param targetAcceleration 目标加速度矢量（m/s²），可为 Vec3.ZERO
+     * @param speed              初速标量（m/s）
+     * @param shooterVelocity    发射者速度（m/s）
+     * @param config             弹丸参数
+     * @param density            空气密度函数
+     * @param maxIterations      最大迭代次数（推力弹长飞行时建议放大）
+     * @param convergeEpsilon    收敛阈值（m），推荐 0.1
+     * @param thrust             推力剖面，{@link ThrustProfile#NONE} 表示无推力
+     * @return 最优瞄准解（即使未收敛也返回最优猜测；距离不足最小射程时返回最近接近解）
+     */
+    public static FiringSolution solveWithLead(
+            Vec3 start,
+            Vec3 targetPosition, Vec3 targetVelocity, Vec3 targetAcceleration,
+            float speed, Vec3 shooterVelocity,
+            BallisticConfig config, DensityFunction density,
+            int maxIterations, float convergeEpsilon, ThrustProfile thrust
+    ) {
+        // 首次粗略外推：distance/估算速度，让迭代起点靠近收敛点
+        float estimateSpeed = speed;
+        if (thrust.isActive()) {
+            estimateSpeed += 0.5f * (thrust.force() / config.mass())
+                    * (thrust.endSeconds() - thrust.startSeconds());
+        }
         float roughDist = (float) targetPosition.distanceTo(start);
-        float roughTime = roughDist > 1e-6f ? roughDist / Math.max(speed, 1e-6f) : 0f;
+        float roughTime = roughDist > 1e-6f ? roughDist / Math.max(estimateSpeed, 1e-6f) : 0f;
         Vec3 predictedPos = roughTime > 0
                 ? targetPosition.add(targetVelocity.scale(roughTime))
                         .add(targetAcceleration.scale(0.5f * roughTime * roughTime))
@@ -540,7 +811,7 @@ public final class RealisticTrajectory {
 
         for (int iter = 0; iter < maxIterations; iter++) {
             var solutions = solveFiringAngle(start, predictedPos, speed, shooterVelocity,
-                    config, density, 0.01f);
+                    config, density, 0.01f, thrust);
 
             if (solutions.isEmpty()) {
                 return bestSolution;
