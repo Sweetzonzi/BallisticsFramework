@@ -14,7 +14,7 @@ import io.github.sweetzonzi.ballistics_framework.api.BFDamageExtensions;
  * 使武器模组只需额外提供 Cd 即可使用拟真解算器。
  *
  * @param dragCoefficient  阻力系数 Cd（无量纲），典型弹丸 0.2~0.5
- * @param mass             弹丸质量 m（kg），可从 BFDamageExtensions.MASS 读取
+ * @param mass             弹丸基础质量 m（kg），可从 BFDamageExtensions.MASS 读取；推力段的质量由 {@link ThrustProfile} 的分段给出
  * @param crossSectionArea 弹丸横截面积 A（m²），可从 BFDamageExtensions.CALIBER 计算
  * @param gravity          重力加速度 g（m/s²），MC 主世界 ≈ 0.04×20 = 0.8
  * @param timeStep         时间步长 Δt（s），默认 0.05（= 1 MC tick）

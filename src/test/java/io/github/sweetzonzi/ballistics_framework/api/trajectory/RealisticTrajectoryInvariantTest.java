@@ -3,11 +3,19 @@ package io.github.sweetzonzi.ballistics_framework.api.trajectory;
 import net.minecraft.world.phys.Vec3;
 import org.junit.jupiter.api.Test;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -23,8 +31,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li>半隐式欧拉积分与高阶参考解的一致性（模型方程正确性的交叉验证）；</li>
  *   <li>反解闭环：反解给出的仰角回代正解后确实经过目标；</li>
  *   <li>射程对仰角单峰——反解二分搜索的收敛前提；</li>
- *   <li>推力项（T1~T9）：旧签名逐位兼容、离散加速闭式解、燃烧窗口的尾部外推、
- *       分派门禁、带推力的单峰性与提前量闭环。</li>
+ *   <li>推力项（T1~T9）：不带剖面参数的签名逐位兼容、离散加速闭式解、燃烧窗口的尾部外推、
+ *       分派门禁、带推力的单峰性与提前量闭环；</li>
+ *   <li>分段推力与燃烧质量流失（T10~T17）：单段剖面与迁移前单窗口的逐位基线、段间空隙滑行、
+ *       视界外段不可见、规范化、质量流失的齐奥尔科夫斯基增量、{@code remainingSince} 续算。</li>
  * </ul>
  *
  * @see RealisticTrajectory#forwardSolve
@@ -36,10 +46,14 @@ class RealisticTrajectoryInvariantTest {
     private static final DensityFunction CONSTANT_DENSITY = pos -> 1.2f;
 
     /** 推力测试用的弹丸：26 kg、152 mm、Cd 0.3——2600 N 对应 a_T = 100 m/s²，与文档的 Kornet 一致 */
-    private static final ThrustProfile KORNET = new ThrustProfile(2600f, 0f, 2.5f);
+    private static final ThrustProfile KORNET = ThrustProfile.of(2600f, 0f, 2.5f);
 
     /** 带推力测试的推荐初速（Kornet 出膛 50 m/s） */
     private static final float LAUNCH_SPEED = 50f;
+
+    /** T10 的迁移前基线：单窗口 {@code ThrustProfile(2600, 0.5, 3.0)} 的全轨迹摘要 */
+    private static final String T10_BASELINE =
+            "/io/github/sweetzonzi/ballistics_framework/api/trajectory/t10-legacy-baseline.txt";
 
     private static BallisticConfig thrustConfig(float dt, int maxSteps) {
         return new BallisticConfig(0.3f, 26f, 0.018f, 9.81f, dt, maxSteps);
@@ -177,7 +191,7 @@ class RealisticTrajectoryInvariantTest {
 
     // ==================== 推力项 ====================
 
-    /** T1：三个旧签名与显式 {@code NONE} 重载逐位相等 */
+    /** T1：三个不带剖面参数的签名与显式 {@code NONE} 重载逐位相等 */
     @Test
     void legacySignaturesMatchNoneOverloads() {
         var config = thrustConfig(0.01f, 300);
@@ -218,7 +232,7 @@ class RealisticTrajectoryInvariantTest {
         Vec3 start = new Vec3(0, 64, 0);
         Vec3 velocity = new Vec3(50, 0, 0);
         var result = RealisticTrajectory.forwardSolve(
-                start, velocity, config, CONSTANT_DENSITY, new ThrustProfile(2600f, 0f, 10f));
+                start, velocity, config, CONSTANT_DENSITY, ThrustProfile.of(2600f, 0f, 10f));
 
         double a = 100.0;
         assertEquals(steps + 1, result.samples().size());
@@ -245,10 +259,10 @@ class RealisticTrajectoryInvariantTest {
         Vec3 start = new Vec3(0, 64, 0);
         Vec3 velocity = new Vec3(50, 20, 0);
         var result = RealisticTrajectory.forwardSolve(
-                start, velocity, config, CONSTANT_DENSITY, new ThrustProfile(2600f, 0f, 10f));
+                start, velocity, config, CONSTANT_DENSITY, ThrustProfile.of(2600f, 0f, 10f));
 
         Vec3 eulerEnd = result.last().position();
-        Vec3 referenceEnd = referenceRk4(start, velocity, config, 10.0, new ThrustProfile(2600f, 0f, 10f));
+        Vec3 referenceEnd = referenceRk4(start, velocity, config, 10.0, ThrustProfile.of(2600f, 0f, 10f));
         assertTrue(eulerEnd.distanceTo(referenceEnd) < 0.1,
                 "半隐式欧拉与 RK4 参考解偏差过大：" + eulerEnd.distanceTo(referenceEnd));
 
@@ -264,7 +278,7 @@ class RealisticTrajectoryInvariantTest {
         float dt = 0.01f;
         int steps = 2000;
         var config = thrustConfig(dt, steps);
-        var thrust = new ThrustProfile(2600f, 0.5f, 3.0f);
+        var thrust = ThrustProfile.of(2600f, 0.5f, 2.5f);
         Vec3 start = new Vec3(0, 64, 0);
         Vec3 velocity = new Vec3(50, 20, 0);
 
@@ -388,6 +402,214 @@ class RealisticTrajectoryInvariantTest {
                 "提前量解在飞行时刻偏离目标预测点 " + atFlightTime.distanceTo(predicted) + " m");
     }
 
+    // ==================== 分段推力与燃烧质量流失 ====================
+
+    /** T10：单段恒质量剖面与迁移前的单窗口形态逐位相同；基线冻结在测试资源里 */
+    @Test
+    void singleSegmentProfileReproducesLegacyWindowBits() throws IOException {
+        var config = new BallisticConfig(0.3f, 26f, 0.018f, 9.81f, 0.01f, 2000);
+        var thrust = ThrustProfile.of(2600f, 0.5f, 2.5f);
+        var result = RealisticTrajectory.forwardSolve(
+                new Vec3(0, 64, 0), new Vec3(50, 20, 0), config, CONSTANT_DENSITY, thrust);
+
+        Baseline baseline = Baseline.read(T10_BASELINE);
+        assertEquals(baseline.sampleCount(), result.samples().size(), "采样点数");
+        assertEquals(baseline.digest(), digestOf(result), "全轨迹的位模式摘要");
+        for (int i = 0; i < baseline.head().size(); i++) {
+            assertEquals(baseline.head().get(i), encodeSample(i, result.samples().get(i)),
+                    "首部第 " + i + " 点");
+        }
+        for (int i = 0; i < baseline.tail().size(); i++) {
+            int index = result.samples().size() - baseline.tail().size() + i;
+            assertEquals(baseline.tail().get(i), encodeSample(index, result.samples().get(index)),
+                    "尾部第 " + index + " 点");
+        }
+    }
+
+    /** T11：双段含空隙——空隙内与无推力外推重合，第二段点火后速率立刻抬升 */
+    @Test
+    void segmentedBurnCoastsThroughGapThenReignites() {
+        float dt = 0.01f;
+        int steps = 2000;
+        var config = thrustConfig(dt, steps);
+        var thrust = new ThrustProfile(List.of(
+                new ThrustProfile.Segment(2600f, 0f, 1.0f, 0f),
+                new ThrustProfile.Segment(2600f, 1.5f, 1.0f, 0f)));
+        Vec3 start = new Vec3(0, 64, 0);
+        Vec3 velocity = new Vec3(50, 20, 0);
+        var boosted = RealisticTrajectory.forwardSolve(
+                start, velocity, config, CONSTANT_DENSITY, thrust);
+
+        // 步编号按步初时刻划分，不写死下标：Δt 取 float 时 100·Δt 与 1.0 差一个 ulp
+        int lastOfFirst = 0;
+        int firstOfSecond = 0;
+        for (int i = 1; i <= steps; i++) {
+            if (!thrustAppliedAt(i, thrust, dt)) continue;
+            if ((i - 1) * (double) dt >= 1.5) {
+                firstOfSecond = i;
+                break;
+            }
+            lastOfFirst = i;
+        }
+        assertTrue(lastOfFirst > 1 && firstOfSecond > lastOfFirst + 1,
+                "两段都应有推力步，且中间隔着空隙：" + lastOfFirst + " / " + firstOfSecond);
+
+        // 空隙：从第一段燃尽的状态另起无推力外推，逐点重合（跨分派边界，属层级②，容差同 T5）
+        TrajectorySample boundary = boosted.samples().get(lastOfFirst);
+        var coast = RealisticTrajectory.forwardSolve(
+                boundary.position(), boundary.velocity(), config, CONSTANT_DENSITY);
+        for (int k = 0; k < firstOfSecond - lastOfFirst; k++) {
+            double gap = coast.samples().get(k).position()
+                    .distanceTo(boosted.samples().get(lastOfFirst + k).position());
+            assertTrue(gap < 1e-3, "空隙内第 " + k + " 步与无推力外推相差 " + gap + " m");
+        }
+
+        // 第二段点火后的第一个采样点：速率比继续滑行高出 a_T·Δt ≈ (2600/26)·0.01 = 1 m/s
+        double reignitedSpeed = boosted.samples().get(firstOfSecond).velocity().length();
+        double coastingSpeed = coast.samples().get(firstOfSecond - lastOfFirst).velocity().length();
+        assertTrue(reignitedSpeed - coastingSpeed > 0.9,
+                "第二段点火后速率只比滑行高 " + (reignitedSpeed - coastingSpeed) + " m/s");
+    }
+
+    /** T12：第二段落在求解视界之外 ⇒ 与只含第一段的剖面逐位相同（两侧同为推力路径，层级①） */
+    @Test
+    void segmentBeyondHorizonIsInvisible() {
+        var config = thrustConfig(0.01f, 200); // 视界 2.0 s，第二段 5.0 s 才点火
+        Vec3 start = new Vec3(0, 64, 0);
+        Vec3 velocity = new Vec3(50, 20, 0);
+        var singleSegment = new ThrustProfile(List.of(
+                new ThrustProfile.Segment(2600f, 0f, 1.0f, 0f)));
+        var twoSegments = new ThrustProfile(List.of(
+                new ThrustProfile.Segment(2600f, 0f, 1.0f, 0f),
+                new ThrustProfile.Segment(2600f, 5.0f, 1.0f, 0f)));
+
+        var shortFlight = RealisticTrajectory.forwardSolve(
+                start, velocity, config, CONSTANT_DENSITY, singleSegment);
+        var longFlight = RealisticTrajectory.forwardSolve(
+                start, velocity, config, CONSTANT_DENSITY, twoSegments);
+
+        assertEquals(shortFlight.samples().size(), longFlight.samples().size());
+        for (int i = 0; i < shortFlight.samples().size(); i++) {
+            assertEquals(shortFlight.samples().get(i).time(), longFlight.samples().get(i).time(),
+                    "第 " + i + " 点时间");
+            assertEquals(shortFlight.samples().get(i).position(), longFlight.samples().get(i).position(),
+                    "第 " + i + " 点位置");
+            assertEquals(shortFlight.samples().get(i).velocity(), longFlight.samples().get(i).velocity(),
+                    "第 " + i + " 点速度");
+        }
+    }
+
+    /** T13：重叠段被拒绝、负质量段被丢弃、乱序段排序后与顺序写入逐位相同 */
+    @Test
+    void profileNormalisationRejectsOverlapAndDropsInvalidSegments() {
+        assertThrows(IllegalArgumentException.class, () -> new ThrustProfile(List.of(
+                        new ThrustProfile.Segment(2600f, 0f, 2.0f, 0f),
+                        new ThrustProfile.Segment(2600f, 1.0f, 1.0f, 0f))),
+                "窗口重叠应被拒绝");
+
+        var withInvalid = new ThrustProfile(List.of(
+                new ThrustProfile.Segment(2600f, 0f, 1.0f, -1f),
+                new ThrustProfile.Segment(2600f, 2.0f, 1.0f, 0f)));
+        assertEquals(1, withInvalid.segments().size(), "负质量段被丢弃");
+        assertEquals(2.0f, withInvalid.startSeconds(), 0f, "只剩下第二段");
+
+        var first = new ThrustProfile.Segment(2600f, 0f, 1.0f, 0f);
+        var second = new ThrustProfile.Segment(2600f, 1.5f, 1.0f, 0f);
+        var ordered = new ThrustProfile(List.of(first, second));
+        var shuffled = new ThrustProfile(List.of(second, first));
+        assertEquals(ordered, shuffled, "构造器按点火时刻排序");
+
+        var config = thrustConfig(0.01f, 300);
+        Vec3 start = new Vec3(0, 64, 0);
+        Vec3 velocity = new Vec3(50, 20, 0);
+        var a = RealisticTrajectory.forwardSolve(start, velocity, config, CONSTANT_DENSITY, ordered);
+        var b = RealisticTrajectory.forwardSolve(start, velocity, config, CONSTANT_DENSITY, shuffled);
+        for (int i = 0; i < a.samples().size(); i++) {
+            assertEquals(a.samples().get(i).position(), b.samples().get(i).position(),
+                    "乱序写入的第 " + i + " 点位置");
+        }
+    }
+
+    /** T14：段内质量流失给出齐奥尔科夫斯基速度增量，燃尽后质量回到基础质量 */
+    @Test
+    void massLossProducesTsiolkovskyVelocityIncrement() {
+        float dt = 0.01f;
+        int steps = 250;
+        float baseMass = 13f;
+        float segmentMass = 13f;
+        float duration = 2.5f;
+        var config = new BallisticConfig(0f, baseMass, 0f, 0f, dt, steps);
+        var thrust = new ThrustProfile(List.of(
+                new ThrustProfile.Segment(2600f, 0f, duration, segmentMass)));
+        Vec3 start = new Vec3(0, 64, 0);
+        var result = RealisticTrajectory.forwardSolve(
+                start, new Vec3(50, 0, 0), config, CONSTANT_DENSITY, thrust);
+
+        double ve = 2600.0 * duration / segmentMass;
+        double expected = ve * Math.log((baseMass + segmentMass) / baseMass);
+        double measured = result.samples().get(steps).velocity().x - 50.0;
+        assertEquals(expected, measured, 2e-3 * expected,
+                "燃尽速度增量应等于 ve·ln(m0/mf)；离散左端点求和的相对误差约 1.4e-3");
+
+        assertEquals(baseMass, thrust.massAt(duration, baseMass), 0f, "燃尽后质量回到基础质量");
+    }
+
+    /** T15：单段剖面与显式一段段表是同一个值，且段质量为 0 时不影响质量 */
+    @Test
+    void singleSegmentProfileEqualsExplicitSegmentList() {
+        var profile = ThrustProfile.of(2600f, 0.5f, 2.5f);
+        var explicit = new ThrustProfile(List.of(
+                new ThrustProfile.Segment(2600f, 0.5f, 2.5f, 0f)));
+        assertEquals(explicit, profile, "of 等价于一段、质量为 0 的段表");
+
+        for (double t : new double[]{0.0, 0.3, 1.0, 2.5, 9.9}) {
+            assertEquals(26f, profile.massAt(t, 26f), 0f, "t=" + t + " 时质量应逐位返回基础质量");
+        }
+        assertEquals(Float.floatToIntBits(2600f), Float.floatToIntBits(profile.forceAt(0.5)), "左端点闭");
+        assertEquals(Float.floatToIntBits(2600f), Float.floatToIntBits(profile.forceAt(2.99)), "窗口内");
+        assertEquals(0f, profile.forceAt(0.49), 0f, "点火前");
+        assertEquals(0f, profile.forceAt(3.0), 0f, "右端点开");
+    }
+
+    /** T16：从 elapsed 处续算，与不裁剪、从发射点一路算到同一时刻的尾部逐点重合 */
+    @Test
+    void remainingSinceContinuesTailOfUnclippedTrajectory() {
+        var config = new BallisticConfig(0.3f, 26f, 0.018f, 9.81f, 0.01f, 2000);
+        var thrust = ThrustProfile.of(2600f, 0.5f, 2.5f);
+        Vec3 start = new Vec3(0, 64, 0);
+        Vec3 velocity = new Vec3(50, 20, 0);
+
+        var full = RealisticTrajectory.forwardSolve(start, velocity, config, CONSTANT_DENSITY, thrust);
+        TrajectorySample cut = full.samples().get(100);
+        var continued = RealisticTrajectory.forwardSolve(
+                cut.position(), cut.velocity(), config, CONSTANT_DENSITY, thrust.remainingSince(1.0));
+
+        assertTrue(continued.samples().size() >= full.samples().size() - 100,
+                "续算至少要覆盖整条轨迹的尾部：" + continued.samples().size());
+        for (int k = 0; k < full.samples().size() - 100; k++) {
+            double gap = continued.samples().get(k).position()
+                    .distanceTo(full.samples().get(100 + k).position());
+            assertTrue(gap < 1e-3, "续算第 " + k + " 步与整条轨迹相差 " + gap + " m");
+        }
+    }
+
+    /** T17：remainingSince 与原剖面在裁剪点上的质量逐位相同 */
+    @Test
+    void remainingSincePreservesMassBitsAtTheCut() {
+        float baseMass = 13f;
+        var profile = new ThrustProfile(List.of(
+                new ThrustProfile.Segment(2600f, 0f, 2.5f, 13f),
+                new ThrustProfile.Segment(1800f, 4.0f, 1.25f, 7.5f)));
+
+        for (double elapsed : new double[]{0.0, 0.3, 1.0, 2.5, 3.7, 5.0, 9.0}) {
+            ThrustProfile cut = profile.remainingSince(elapsed);
+            assertEquals(
+                    Float.floatToIntBits(profile.massAt(elapsed, baseMass)),
+                    Float.floatToIntBits(cut.massAt(0.0, baseMass)),
+                    "elapsed=" + elapsed + " 时裁剪前后质量应逐位相同");
+        }
+    }
+
     // ==================== 辅助 ====================
 
     /** 以给定仰角发射，返回到达发射高度的水平距离；未在步数内落地返回 0 */
@@ -450,10 +672,16 @@ class RealisticTrajectoryInvariantTest {
         return new Vec3(drag.x, drag.y - gravity, drag.z);
     }
 
-    /** 文档 §三 的步判定：第 i 步的左端点落在窗口内才施加推力 */
+    /** 文档 §三 的步判定：第 i 步的左端点落在某段窗口内才施加推力；按段独立遍历，不复用生产的 {@code forceAt} */
     private static boolean thrustAppliedAt(int step, ThrustProfile thrust, float dt) {
         double stepStart = (step - 1) * (double) dt;
-        return stepStart >= thrust.startSeconds() && stepStart < thrust.endSeconds();
+        for (ThrustProfile.Segment segment : thrust.segments()) {
+            if (stepStart >= segment.delaySeconds()
+                    && stepStart < segment.delaySeconds() + (double) segment.durationSeconds()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static int firstThrustStep(ThrustProfile thrust, float dt, int maxSteps) {
@@ -493,16 +721,82 @@ class RealisticTrajectoryInvariantTest {
         return result.samples().get(index).position();
     }
 
+    /** 位模式摘要：对 time（floatToIntBits）与 6 个坐标（doubleToLongBits）做 FNV-1a 64 */
+    private static long digestOf(TrajectoryResult result) {
+        long hash = 0xcbf29ce484222325L;
+        for (TrajectorySample sample : result.samples()) {
+            for (long bits : bitPatterns(sample)) {
+                hash ^= bits;
+                hash *= 0x100000001b3L;
+            }
+        }
+        return hash;
+    }
+
+    /** 一个采样点的 7 个位模式，顺序与基线文件一致：time x y z vx vy vz */
+    private static long[] bitPatterns(TrajectorySample sample) {
+        Vec3 p = sample.position();
+        Vec3 v = sample.velocity();
+        return new long[]{
+                Float.floatToIntBits(sample.time()),
+                Double.doubleToLongBits(p.x), Double.doubleToLongBits(p.y), Double.doubleToLongBits(p.z),
+                Double.doubleToLongBits(v.x), Double.doubleToLongBits(v.y), Double.doubleToLongBits(v.z)
+        };
+    }
+
+    private static String encodeSample(int index, TrajectorySample sample) {
+        StringBuilder line = new StringBuilder().append(index);
+        for (long bits : bitPatterns(sample)) {
+            line.append(String.format(Locale.ROOT, " %016x", bits));
+        }
+        return line.toString();
+    }
+
+    /** 冻结在测试资源里的迁移前基线：采样点数 + 全轨迹摘要 + 首尾各 5 点（用于失败时读出差异） */
+    private record Baseline(int sampleCount, long digest, List<String> head, List<String> tail) {
+
+        static Baseline read(String resource) throws IOException {
+            try (InputStream in = RealisticTrajectoryInvariantTest.class.getResourceAsStream(resource)) {
+                assertNotNull(in, "找不到基线资源 " + resource);
+                int sampleCount = 0;
+                long digest = 0;
+                List<String> head = new ArrayList<>();
+                List<String> tail = new ArrayList<>();
+                List<String> current = null;
+                for (String raw : new BufferedReader(
+                        new InputStreamReader(in, StandardCharsets.UTF_8)).lines().toList()) {
+                    String line = raw.trim();
+                    if (line.isEmpty() || line.startsWith("#")) {
+                        continue;
+                    }
+                    if (line.startsWith("samples ")) {
+                        sampleCount = Integer.parseInt(line.substring("samples ".length()).trim());
+                    } else if (line.startsWith("digest ")) {
+                        digest = Long.parseUnsignedLong(line.substring("digest ".length()).trim(), 16);
+                    } else if (line.equals("head")) {
+                        current = head;
+                    } else if (line.equals("tail")) {
+                        current = tail;
+                    } else if (current != null) {
+                        current.add(line);
+                    }
+                }
+                return new Baseline(sampleCount, digest, List.copyOf(head), List.copyOf(tail));
+            }
+        }
+    }
+
     /** 带推力的 RK4 参考积分（步长 0.0002 s），用于交叉验证二维推进 */
     private static Vec3 referenceRk4(
             Vec3 start, Vec3 velocity, BallisticConfig config, double totalTime, ThrustProfile thrust) {
         double h = 0.0002;
-        double halfRhoRef = 0.5 * config.dragCoefficient() * config.crossSectionArea() / config.mass();
-        double aT = thrust.force() / (double) config.mass();
         Vec3 p = start;
         Vec3 v = velocity;
         for (double t = 0; t < totalTime - 1e-12; t += h) {
-            double thrustNow = t >= thrust.startSeconds() && t < thrust.endSeconds() ? aT : 0.0;
+            double mass = thrust.massAt(t, config.mass());
+            double halfRhoRef = 0.5 * config.dragCoefficient() * config.crossSectionArea() / mass;
+            float forceN = thrust.forceAt(t);
+            double thrustNow = forceN > 0f ? forceN / mass : 0.0;
             Vec3 k1p = v;
             Vec3 k1v = acceleration(v, config.gravity(), halfRhoRef, thrustNow);
             Vec3 k2p = v.add(k1v.scale(0.5 * h));
