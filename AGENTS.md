@@ -17,7 +17,7 @@
 
 - **This repository carries one branch per loader**: `1.21.1-neoforge` (NeoForge, Java 21) and `1.20.1-forge` (Forge, Java 17). Platform details are branch-specific and authoritative in the checked-out branch's own config — read `gradle.properties` (`minecraft_version`, `neo_version` or `forge_version`, `mod_version`) and `build.gradle` (`archivesName`, `java.toolchain.languageVersion`). The branch name doubles as the release artifact's `-<loader>` suffix.
 - **mod_id**: `ballistics_framework`, package: `io.github.sweetzonzi.ballistics_framework` (identical on both branches)
-- Current version: `1.0.0.alpha.14` (from `gradle.properties`)
+- Current version: `1.0.0.alpha.15` (from `gradle.properties`)
 - License: LGPL 3.0
 - Wiki (MkDocs) at `docs/`; GitHub Pages deploys only from `1.21.1-neoforge` (see CI / Release)
 
@@ -70,8 +70,9 @@ Mixin interceptors (`EntityHurtMixin`, `LivingEntityHurtMixin`) catch non-protoc
 - `BFDamageExtensions.init()` must be called before any API use (done in mod constructor)
 - All values in SI units: penetration in **mm** RHA, velocity in **m/s**, caliber in **m**, mass in **kg**
 - Trajectory solver input units: **MinecraftTrajectory** uses m/tick (matching `Entity.getDeltaMovement()`), output auto-converts to m/s (×20). **RealisticTrajectory** uses full SI (m/s for velocity, kg for mass, m for dimensions).
-- Engine thrust is an optional overload parameter `ThrustProfile` on `RealisticTrajectory` (never a `BallisticConfig` field): constant force along the velocity direction, active only inside `[startSeconds, endSeconds)`, with step `i` applying thrust iff `(i−1)Δt ∈ [start, end)`. The legacy 4/7/10-arg signatures delegate to `NONE`, so no-thrust results are bit-identical. Contract: `docs/弹道求解器-推力项设计.md`.
+- Engine thrust is an optional overload parameter `ThrustProfile` on `RealisticTrajectory` (never a `BallisticConfig` field): a table of burn segments, each active inside `[delaySeconds, delaySeconds + durationSeconds)` with step `i` applying thrust iff `(i−1)·Δt` falls in a segment window. Thrust acts along the velocity direction; mass is `BallisticConfig#mass` (base mass) plus the unburned `Segment#massKg` of each segment, so acceleration rises as propellant burns. The 4/7/10-arg signatures delegate to `NONE`, so no-thrust results are bit-identical. Contract: segmented burns, mass loss and `remainingSince` re-solve in `docs/推力分段与燃烧质量流失-实施计划.md`; the solver-side placement (degenerate paths, firing angle, lead) in `docs/弹道求解器-推力项设计.md`.
 - Both solvers auto-detect degenerate paths (no-gravity → linear motion, no-drag → analytic parabola) — users call the same method regardless.
+- `TrajectoryResult` is the shared output of both solvers, and the firing-angle search currently materialises a full trajectory per bisection step to read one scalar. Planned rework — probe-only firing solve first (bit-identical), then a `float`→`double` pass over the integrator's intermediates, then interleaved row-major `double[]` sample storage (one 7-double row per sample, `TrajectoryCursor` traversal, no `samples()`, and `closestTo(point)` replacing the accessors that read the simulation cutoff as if it were an impact point): `docs/弹道求解器-求角免物化与采样存储改造计划.md`.
 - `BFDamageContext` is a `record` — use `Builder` or `withHandler()`/`childContext()` for modifications
 - `BFDamageApi.hurt()` return value may NOT equal actual HP loss (vanilla armor applies secondary reduction)
 - Weapon mods use `BFDamageHandler.dealDamage(target, ctx)` to auto-inject handler

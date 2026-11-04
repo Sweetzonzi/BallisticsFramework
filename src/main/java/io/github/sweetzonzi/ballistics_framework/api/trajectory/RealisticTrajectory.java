@@ -24,9 +24,10 @@ import java.util.List;
  * 解算器自动识别退化路径（匀速直线、纯抛物线、直线减速），
  * 在不损失精度的情况下跳过分步积分。
  * <p>
- * 可选发动机推力（{@link ThrustProfile}）：沿速度方向、大小恒定、只在给定时间窗内生效。
- * 推力激活时正解改走发射竖直平面内的二维推进（横向加速度恒为零），反解跳过不含推力项的
- * 解析捷径，动目标提前量用燃烧段平均速度做首轮粗估。
+ * 可选发动机推力（{@link ThrustProfile}）：一条剖面由若干推力段组成，段内推力沿速度方向、
+ * 大小恒定，段间空隙滑行；段质量按“段内匀速烧掉”计入 {@code m(t)}，推力加速度随质量下降上升。
+ * 段表非空时正解改走发射竖直平面内的二维推进（横向加速度恒为零），反解跳过不含推力项的
+ * 解析捷径，动目标提前量用“各段速度增量的一半”做首轮粗估。
  * <p>
  * 所有方法均为 {@code static} 且无内部状态，线程安全。
  */
@@ -71,10 +72,10 @@ public final class RealisticTrajectory {
     /**
      * 带可选发动机推力的前向模拟。
      * <p>
-     * 推力沿速度方向、大小恒定（{@code a_T = force / mass}），只在
-     * {@link ThrustProfile} 的时间窗内施加。分派门禁：先看推力是否激活，
-     * 再看 {@code isNoDrag} / {@code gravity == 0}——推力激活时不得进入下面四条
-     * 不含推力项的捷径（它们会把助推射程低估数倍）。
+     * 推力沿速度方向：每个推力步取 {@code forceAt(步初时刻)}，除以该步的
+     * {@code massAt(步初时刻, config.mass())}，因此段内质量下降时加速度上升、段间空隙滑行。
+     * 分派门禁：先看段表是否非空，再看 {@code isNoDrag} / {@code gravity == 0}——段表非空时
+     * 不得进入下面四条不含推力项的捷径（它们会把助推射程低估数倍）。
      * <p>
      * 初速为零时推力方向 {@code v̂} 无定义，本模型在静止点的极限 {@code a_T·v̂} 为 0，
      * 因此按无推力处理（走既有退化路径）。
@@ -210,36 +211,27 @@ public final class RealisticTrajectory {
     // ======================== 推力版正解（门禁内）=======================
 
     /**
-     * 时间窗判定：第 {@code step} 步覆盖 {@code [(step−1)Δt, stepΔt)}，
-     * 左端点落在 {@code [startSeconds, endSeconds)} 内才施加推力。
-     * <p>
-     * 判定只看步序号与 Δt，不依赖“是否已施加过推力”，因此“最后一个施加推力的步”是确定的，
-     * 燃尽瞬间的状态可以被测试取出来另起无推力外推（见设计文档 T5）。
-     */
-    private static boolean thrustAppliedAtStep(int step, float dt, ThrustProfile thrust) {
-        double stepStart = (step - 1) * (double) dt;
-        return stepStart >= thrust.startSeconds() && stepStart < thrust.endSeconds();
-    }
-
-    /**
-     * 直线加速（g = 0、无阻力）：方向恒定，速度按窗口线性增长。
+     * 直线加速（g = 0、无阻力）：方向恒定，速度按段表线性增长。
      * <p>
      * 每步只有加乘，无三角函数、无密度查询。离散递推与 {@link #solveLinearMotionSI} 同源，
-     * 因此窗口外的段与无推力解逐位重合。
+     * 因此窗口外的段与无推力解逐位重合；段质量非 0 时每步按该步质量重算推力加速度。
      */
     private static TrajectoryResult solveThrustNoDragSI(
             Vec3 start, Vec3 velocity, BallisticConfig config, ThrustProfile thrust
     ) {
         float dt = config.timeStep();
         int maxSteps = config.maxSteps();
-        float aT = thrust.force() / config.mass();
         Vec3 dir = velocity.normalize();
         var samples = new ArrayList<TrajectorySample>(maxSteps + 1);
         samples.add(new TrajectorySample(0f, start, velocity));
         double speed = velocity.length();
         Vec3 pos = start;
         for (int i = 1; i <= maxSteps; i++) {
-            if (thrustAppliedAtStep(i, dt, thrust)) {
+            // 第 i 步覆盖 [(i−1)Δt, iΔt)，判定取步初时刻
+            double stepStart = (i - 1) * (double) dt;
+            float forceN = thrust.forceAt(stepStart);
+            if (forceN > 0f) {
+                float aT = forceN / thrust.massAt(stepStart, config.mass());
                 speed += aT * dt;
             }
             pos = pos.add(dir.scale(speed * dt));
@@ -251,7 +243,8 @@ public final class RealisticTrajectory {
     /**
      * 直线加速 + 阻力（g = 0）：方向恒定，速度走一维 ODE。
      * <p>
-     * 推力与阻力都沿速度方向，横向分量恒为零，因此不需要二维推进。
+     * 推力与阻力都沿速度方向，横向分量恒为零，因此不需要二维推进。阻力系数里的质量每步重取，
+     * 段内质量下降时阻力随之减小。
      */
     private static TrajectoryResult solveThrustStraightDragSI(
             Vec3 start, Vec3 velocity, BallisticConfig config,
@@ -259,17 +252,21 @@ public final class RealisticTrajectory {
     ) {
         float dt = config.timeStep();
         int maxSteps = config.maxSteps();
-        float aT = thrust.force() / config.mass();
-        float halfRhoRef = 0.5f * config.dragCoefficient() * config.crossSectionArea() / config.mass();
+        float dragCoefficient = config.dragCoefficient();
+        float area = config.crossSectionArea();
         Vec3 dir = velocity.normalize();
         var samples = new ArrayList<TrajectorySample>(maxSteps + 1);
         samples.add(new TrajectorySample(0f, start, velocity));
         double speed = velocity.length();
         Vec3 pos = start;
         for (int i = 1; i <= maxSteps; i++) {
+            double stepStart = (i - 1) * (double) dt;
+            float mass = thrust.massAt(stepStart, config.mass());
+            float halfRhoRef = 0.5f * dragCoefficient * area / mass;
             double accel = -halfRhoRef * density.getDensity(pos) * speed * speed;
-            if (thrustAppliedAtStep(i, dt, thrust)) {
-                accel += aT;
+            float forceN = thrust.forceAt(stepStart);
+            if (forceN > 0f) {
+                accel += forceN / mass;
             }
             speed = Math.max(0.0, speed + accel * dt);
             pos = pos.add(dir.scale(speed * dt));
@@ -299,8 +296,8 @@ public final class RealisticTrajectory {
         float dt = config.timeStep();
         int maxSteps = config.maxSteps();
         float gravity = config.gravity();
-        float aT = thrust.force() / config.mass();
-        float halfRhoRef = 0.5f * config.dragCoefficient() * config.crossSectionArea() / config.mass();
+        float dragCoefficient = config.dragCoefficient();
+        float area = config.crossSectionArea();
 
         double horizSpeed = Math.hypot(velocity.x, velocity.z);
         Vec3 horizDir = horizSpeed > 1e-12
@@ -314,6 +311,9 @@ public final class RealisticTrajectory {
         var samples = new ArrayList<TrajectorySample>(maxSteps + 1);
         samples.add(new TrajectorySample(0f, start, velocity));
         for (int i = 1; i <= maxSteps; i++) {
+            double stepStart = (i - 1) * (double) dt;
+            float mass = thrust.massAt(stepStart, config.mass());
+            float halfRhoRef = 0.5f * dragCoefficient * area / mass;
             Vec3 pos = new Vec3(start.x + horizDir.x * along, height, start.z + horizDir.z * along);
             double vMag = Math.sqrt(u * u + w * w);
             // 二次阻力（与三维全积分同式）
@@ -323,7 +323,9 @@ public final class RealisticTrajectory {
                 w -= w * dragFactor * dt;
             }
             // 推力沿速度方向
-            if (thrustAppliedAtStep(i, dt, thrust) && vMag > 1e-10) {
+            float forceN = thrust.forceAt(stepStart);
+            if (forceN > 0f && vMag > 1e-10) {
+                float aT = forceN / mass;
                 double thrustAccel = aT * dt / vMag;
                 u += u * thrustAccel;
                 w += w * thrustAccel;
@@ -772,8 +774,8 @@ public final class RealisticTrajectory {
      * “给定仰角的飞行时长”本身，而这已经由推力版
      * {@link #solveFiringAngle(Vec3, Vec3, float, Vec3, BallisticConfig, DensityFunction, float, ThrustProfile)}
      * 提供。唯一的结构性差异是首轮粗估：助推弹的平均速度远高于出膛初速，仍按
-     * {@code distance / speed} 会把飞行时间低估数倍，因此推力激活时改用燃烧段平均速度
-     * {@code speed + a_T·(endSeconds − startSeconds) / 2}。
+     * {@code distance / speed} 会把飞行时间低估数倍，因此段表非空时按段累加“该段速度增量的一半”
+     * （见 {@link #estimateSpeedBoost}）。
      *
      * @param start              发射位置（m）
      * @param targetPosition     目标当前位置（m）
@@ -798,8 +800,7 @@ public final class RealisticTrajectory {
         // 首次粗略外推：distance/估算速度，让迭代起点靠近收敛点
         float estimateSpeed = speed;
         if (thrust.isActive()) {
-            estimateSpeed += 0.5f * (thrust.force() / config.mass())
-                    * (thrust.endSeconds() - thrust.startSeconds());
+            estimateSpeed += estimateSpeedBoost(thrust, config.mass());
         }
         float roughDist = (float) targetPosition.distanceTo(start);
         float roughTime = roughDist > 1e-6f ? roughDist / Math.max(estimateSpeed, 1e-6f) : 0f;
@@ -835,5 +836,49 @@ public final class RealisticTrajectory {
         }
 
         return bestSolution;
+    }
+
+    /**
+     * 首轮粗估用的速率增量——按段累加，每段贡献“该段速度增量的一半”。
+     * <p>
+     * 段质量为 0 时段内质量不变，速度增量是 {@code a_T·duration}，一半即
+     * {@code (0.5f · forceN / m_i) · durationSeconds}，与单窗口形态逐位一致。
+     * 段质量非 0 时速度增量是 {@code ve·ln(m_i/m_f)}，其时间平均为
+     * {@code ve·[1 + r·ln r/(1−r)]}（{@code r = m_f/m_i}，{@code r → 1} 时退化为前者的一半）。
+     * 逐段判档而不是对整表判一次：一段有质量、一段没有是合法剖面，按整表判会让零质量段
+     * 走进质量式，得到 {@code 0/0}。{@code r} 舍入到 0 或 1 的退化配置（段质量小于基础质量的
+     * {@code 2⁻²⁴}、基础质量为 0）同样走零质量式：它是同一个极限。
+     *
+     * @param thrust   推力剖面，段表非空
+     * @param baseMass 弹体基础质量（kg）
+     * @return 各段速率增量之和（m/s）
+     */
+    private static float estimateSpeedBoost(ThrustProfile thrust, float baseMass) {
+        List<ThrustProfile.Segment> segments = thrust.segments();
+        // ignitionMasses[i] = 第 i 段点火时的质量 = 基础质量 + 本段及之后各段尚未烧掉的质量
+        float[] ignitionMasses = new float[segments.size()];
+        float running = baseMass;
+        for (int i = segments.size() - 1; i >= 0; i--) {
+            running += segments.get(i).massKg();
+            ignitionMasses[i] = running;
+        }
+
+        float boost = 0f;
+        for (int i = 0; i < segments.size(); i++) {
+            ThrustProfile.Segment segment = segments.get(i);
+            float ignitionMass = ignitionMasses[i];
+            float duration = segment.durationSeconds();
+            float massKg = segment.massKg();
+            // 段质量为 0 时质量不变；ratio 落到 0 或 1（段质量小到舍入成 1、或基础质量为 0）
+            // 时闭式解是 0/0，按零质量式的极限取
+            float ratio = massKg > 0f ? (ignitionMass - massKg) / ignitionMass : 1f;
+            if (ratio >= 1f || ratio <= 0f) {
+                boost += (0.5f * (segment.forceN() / ignitionMass)) * duration;
+            } else {
+                float ve = segment.forceN() * duration / massKg;
+                boost += ve * (1f + ratio * (float) Math.log(ratio) / (1f - ratio));
+            }
+        }
+        return boost;
     }
 }
