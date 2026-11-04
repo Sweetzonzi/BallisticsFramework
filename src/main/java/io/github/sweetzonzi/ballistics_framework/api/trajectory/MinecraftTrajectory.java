@@ -574,11 +574,17 @@ public final class MinecraftTrajectory {
         return new Vec3(horizDir.x * cosT, sinT, horizDir.z * cosT);
     }
 
-    /** 估算弹道在目标高度处的水平进度（0~1 为未到达，>1 为超过） */
+    /**
+     * 估算弹道在目标高度处的水平进度（0~1 为未到达，>1 为超过）。
+     * <p>
+     * 全程以<b>发射点</b>为原点：世界坐标本身可能远离原点，绝对坐标的模长与射程不是同一个量级，
+     * 直接相除得到的不是"进度"，也失去区分力。
+     */
     private static float estimateHorizontalProgress(TrajectoryResult result, Vec3 target) {
+        Vec3 origin = result.first().position();
         float targetY = (float) target.y;
-        float targetHorizDist = (float) new Vec3(target.x - result.first().position().x, 0,
-                target.z - result.first().position().z).length();
+        float targetHorizDist = (float) new Vec3(target.x - origin.x, 0,
+                target.z - origin.z).length();
 
         if (targetHorizDist < 1e-6f) return 0f;
 
@@ -589,12 +595,14 @@ public final class MinecraftTrajectory {
             float currY = (float) curr.position().y;
 
             if ((prevY >= targetY && currY <= targetY) || (prevY <= targetY && currY >= targetY)) {
-                // 插值找到穿过目标高度时的水平位置
+                // 插值找到穿过目标高度时的位置，再相对发射点求水平进度
                 float t = (targetY - prevY) / (currY - prevY);
-                float interpX = (float) (prev.position().x + t * (curr.position().x - prev.position().x));
-                float interpZ = (float) (prev.position().z + t * (curr.position().z - prev.position().z));
-                float horizDone = (float) Math.sqrt(interpX * interpX + interpZ * interpZ);
-                return horizDone / targetHorizDist;
+                double interpX = (prev.position().x - origin.x)
+                        + t * (curr.position().x - prev.position().x);
+                double interpZ = (prev.position().z - origin.z)
+                        + t * (curr.position().z - prev.position().z);
+                double horizDone = Math.sqrt(interpX * interpX + interpZ * interpZ);
+                return (float) (horizDone / targetHorizDist);
             }
             prev = curr;
         }
