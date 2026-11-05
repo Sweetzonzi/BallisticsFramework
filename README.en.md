@@ -1,8 +1,8 @@
 # Ballistics Framework — A Ballistics Damage Protocol Layer
 
-![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green)
-![NeoForge](https://img.shields.io/badge/NeoForge-21.1.219-blue)
-![Java](https://img.shields.io/badge/Java-21-orange)
+![Minecraft](https://img.shields.io/badge/Minecraft-1.20.1-green)
+![Forge](https://img.shields.io/badge/Forge-47.4.0-blue)
+![Java](https://img.shields.io/badge/Java-17-orange)
 ![License](https://img.shields.io/badge/License-LGPL%203.0-blue)
 [![Wiki](https://img.shields.io/badge/Wiki-GitHub%20Pages-blue?logo=github)](https://sweetzonzi.github.io/BallisticsFramework/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Sweetzonzi/BallisticsFramework)
@@ -34,9 +34,9 @@ The protocol's guiding principle is **wrap, don't replace** — it never bypasse
 ./gradlew build
 ```
 
-Output at `build/libs/ballistics_framework-1.21.1-neoforge-1.0.0.alpha.15.jar`.
+Output at `build/libs/ballistics_framework-1.20.1-forge-1.0.0.alpha.15.jar`.
 
-Dependency via flatDir local jar or source-set dependency; declare in `neoforge.mods.toml`.
+Dependency via flatDir local jar or source-set dependency; declare in `mods.toml`.
 
 ***
 

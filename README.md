@@ -1,13 +1,13 @@
 # Ballistics Framework — 弹道框架
 
-![Minecraft](https://img.shields.io/badge/Minecraft-1.21.1-green)
-![NeoForge](https://img.shields.io/badge/NeoForge-21.1.219-blue)
-![Java](https://img.shields.io/badge/Java-21-orange)
+![Minecraft](https://img.shields.io/badge/Minecraft-1.20.1-green)
+![Forge](https://img.shields.io/badge/Forge-47.4.0-blue)
+![Java](https://img.shields.io/badge/Java-17-orange)
 ![License](https://img.shields.io/badge/License-LGPL%203.0-blue)
 [![Wiki](https://img.shields.io/badge/Wiki-GitHub%20Pages-blue?logo=github)](https://sweetzonzi.github.io/BallisticsFramework/)
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/Sweetzonzi/BallisticsFramework)
 
-[English](README.en.md) | [Forge 1.20.1 版](https://github.com/Sweetzonzi/BallisticsFramework/tree/1.20.1-forge)
+[English](README.en.md) | [NeoForge 1.21.1 版](https://github.com/Sweetzonzi/BallisticsFramework/tree/1.21.1-neoforge)
 
 ***
 
@@ -34,7 +34,7 @@ BallisticsFramework 是一个 NeoForge/Forge（1.21.1/1.20.1）lib 模组，为 
 ./gradlew build
 ```
 
-产物位于 `build/libs/ballistics_framework-1.21.1-neoforge-1.0.0.alpha.15.jar`。
+产物位于 `build/libs/ballistics_framework-1.20.1-forge-1.0.0.alpha.15.jar`。
 
 ## 引入依赖
 
@@ -48,10 +48,10 @@ repositories {
 }
 
 dependencies {
-    // NeoForge 1.21.1（本分支）
-    implementation "io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.15"
-    // Forge 1.20.1（1.20.1-forge 分支）:
-    // implementation "io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.15"
+    // Forge 1.20.1（本分支）
+    implementation "io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.15"
+    // NeoForge 1.21.1（1.21.1-neoforge 分支）:
+    // implementation "io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.15"
 }
 ```
 
@@ -65,10 +65,10 @@ repositories {
 }
 
 dependencies {
-    // NeoForge 1.21.1（本分支）
-    implementation("io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.15")
-    // Forge 1.20.1（1.20.1-forge 分支）:
-    // implementation("io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.15")
+    // Forge 1.20.1（本分支）
+    implementation("io.github.sweetzonzi:ballistics_framework-1.20.1-forge:1.0.0.alpha.15")
+    // NeoForge 1.21.1（1.21.1-neoforge 分支）:
+    // implementation("io.github.sweetzonzi:ballistics_framework-1.21.1-neoforge:1.0.0.alpha.15")
 }
 ```
 
